@@ -3,7 +3,7 @@
    On Windows it is the window's own menu. On Linux it is a GTK menu bar, in the desktop's theme,
    set into the top of the window. GTK is loaded when the game starts and not needed to build,
    and it draws through X11, which is also what SDL uses on a Raspberry Pi. Where neither can be
-   had, menubar_open returns 0 and the game window draws a bar of its own.
+   had, menubar_open returns 0 and the window has no menus, though its keys still work.
 
    The menus are given as a flat list of items, and a chosen item comes back as its command
    number from menubar_poll. */

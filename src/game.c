@@ -1,13 +1,14 @@
-/* The game window: one game, booted hands-free and shown in a window with a menu bar of its own.
+/* The game window: one game, booted hands-free and shown in a window with the system's menu bar.
 
    A game starts behind a splash screen. The machine is run as fast as the host allows while a
    script holds Shift for a disc that boots, or opens the command line and runs the game's
    application for one that doesn't, and the splash gives way to the picture once the game has
    put up a screen of its own. From there the machine runs in real time.
 
-   The Game menu has full screen and the three window sizes. Switch Floppy changes the disc in
-   the drive, and an auto switch point remembers the screen a game asks for a disc on, so that
-   the next time the game shows that screen the disc changes by itself. */
+   The Game menu has full screen and the three window sizes. Switch Floppy, there only for a game
+   with more than one disc, changes the disc in the drive, and an auto switch point remembers the
+   screen a game asks for a disc on, so that the next time the game shows that screen the disc
+   changes by itself. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,7 +16,6 @@
 #include "piarcboot.h"
 #include "default_cmos.h"
 
-#define BAR 32                  /* height of the button bar the menus hang from, in RISC OS pixels */
 #define GRID_W 80
 #define GRID_H 64
 #define GRID (GRID_W * GRID_H)
@@ -35,11 +35,11 @@ static int fullscreen, captured, told_capture;
 static int native_bar;                  /* the window has a menu bar of the system's own making */
 static int fit_w, fit_h;                /* the size the window was last given for a size in the menu */
 static int kept_w, kept_h;              /* and its size before it went full screen */
-static int open_menu;                   /* in the drawn bar: 0 none, 1 Game, 2 Switch Floppy */
 
 #define MENUS 2
 #define MAX_ITEMS (MAX_DISCS + 8)
 static const char *const menu_titles[MENUS] = { "Game", "Switch Floppy" };
+static int n_menus = MENUS;             /* 1 for a game with one disc: no Switch Floppy */
 enum { CMD_FULLSCREEN = 1, CMD_SCALE, CMD_CLOSE = CMD_SCALE + 4, CMD_SET_SWAP, CMD_CLEAR_SWAPS, CMD_SEND_ESC, CMD_DISC };
 static char note[160];
 static Uint32 note_until;
@@ -194,7 +194,7 @@ static void swaps_check(void)
 /* How much of the top of the window the menu bar takes, in real pixels */
 static int bar_px(void)
 {
-	return native_bar ? menubar_height() : (int)(BAR * rg_scale + 0.5f);
+	return native_bar ? menubar_height() : 0;
 }
 
 /* How many real pixels each way a pixel of the 1x picture gets on this display: the display's
@@ -231,8 +231,8 @@ static void fit_window(void)
 	SDL_SetWindowSize(rg_win, fit_w, fit_h);
 }
 
-/* Full screen has no menu bar of the system's: the drawn one comes down from the top edge.
-   Coming back, the window is the size it was. */
+/* Full screen has no menu bar, and Alt+Enter comes back. Coming back, the window is the size it
+   was. */
 static void set_fullscreen(int on)
 {
 	if (on == fullscreen)
@@ -406,8 +406,6 @@ static int menu_command(int cmd)
 	{
 		if (swap_pending)
 			swap_pending = 0;
-		else if (game.ndiscs < 2)
-			notify("This game has one disk, so there is nothing to switch to.");
 		else if (n_swaps >= MAX_SWAPS)
 			notify("This game has all the auto switch points it can hold.");
 		else
@@ -428,68 +426,6 @@ static int menu_command(int cmd)
 	else if (cmd >= CMD_DISC && cmd < CMD_DISC + game.ndiscs)
 		choose_disc(cmd - CMD_DISC);
 	return 0;
-}
-
-/* The menu bar the window draws for itself, and whichever menu is open under it: where the
-   system gives the window no menu bar, and in full screen, where it comes down when the pointer
-   touches the top edge. Its buttons are action buttons that stay in while their menu is open,
-   and a menu is a RISC OS one, with its name in a title bar. Returns 1 if the game is to close. */
-static int draw_menus(const menu_item_t *it, int n)
-{
-	int w, h, i, x = 6, quit = 0, hit_bar = 0, mx[MENUS];
-
-	rg_size(&w, &h);
-	if (fullscreen ? !open_menu && !(rg_in.y >= 0 && rg_in.y < 3 && !captured) : native_bar)
-		return 0;
-	rg_marble(0, 0, w, BAR - 1);
-	rg_fill(0, BAR - 1, w, 1, rg_colour(7));
-	for (i = 0; i < MENUS; i++)
-	{
-		int tw = rg_text_w(RG_DESKTOP, menu_titles[i]) + 24, open = open_menu == i + 1;
-
-		mx[i] = x;
-		rg_fill(x, 4, tw, BAR - 9, rg_colour(open ? 3 : 1));
-		rg_text_centre(RG_DESKTOP, x, 4, tw, BAR - 9, rg_colour(7), menu_titles[i]);
-		rg_border(RG_ACTION, x, 4, tw, BAR - 9, open ? RG_SELECTED : 0);
-		if (rg_over(x, 4, tw, BAR - 9) && rg_in.pressed)
-		{
-			open_menu = open ? 0 : i + 1;
-			hit_bar = 1;
-		}
-		x += tw + 8;
-	}
-	if (open_menu)
-	{
-		const char *labels[MAX_ITEMS];
-		int m = open_menu - 1, k = 0, y = BAR + 20, mw, mh = 0;
-
-		for (i = 0; i < n; i++)
-			if (it[i].menu == m)
-			{
-				labels[k++] = it[i].label;
-				mh += 22 + (it[i].rule ? 12 : 0);       /* a dotted line above it takes 12 */
-			}
-		mw = rg_menu_width(menu_titles[m], labels, k);
-		rg_menu(mx[m] + 1, y, mw, mh, menu_titles[m]);
-		for (i = 0; i < n; i++)
-		{
-			/* the line above an item is drawn under the one before it */
-			unsigned flags = (it[i].checked ? RG_M_TICK : 0) | (i + 1 < n && it[i + 1].menu == m && it[i + 1].rule ? RG_M_DOTTED : 0);
-
-			if (it[i].menu != m)
-				continue;
-			if (rg_menu_item(mx[m] + 1, y, mw, it[i].label, flags))
-			{
-				quit |= menu_command(it[i].cmd);
-				open_menu = 0;
-			}
-			y += rg_menu_item_height(flags);
-		}
-		/* a click outside the open menu closes it */
-		if (open_menu && rg_in.pressed && !hit_bar && !rg_over(mx[m], BAR, mw + 2, mh + 21))
-			open_menu = 0;
-	}
-	return quit;
 }
 
 /* A notice in the bottom right corner: a cream box with a black edge */
@@ -613,17 +549,19 @@ int game_main(const char *id, const char *test_script)
 	for (n = 0; cls[n]; n++)
 		if (!((cls[n] | 32) >= 'a' && (cls[n] | 32) <= 'z') && !(cls[n] >= '0' && cls[n] <= '9') && cls[n] != '-' && cls[n] != '_')
 			cls[n] = '_';
-	if (rg_open(game.title, 320 * game.scale, 256 * game.scale + BAR, RG_RESIZABLE, cls, icon))
+	if (rg_open(game.title, 320 * game.scale, 256 * game.scale, RG_RESIZABLE, cls, icon))
 	{
 		fprintf(stderr, "piarcboot: %s\n", SDL_GetError());
 		return 1;
 	}
 	SDL_InitSubSystem(SDL_INIT_AUDIO);      /* a machine with no sound still plays, silently */
 	/* The menu bar is the system's own where it has one to give */
-	native_bar = !getenv("PIARCBOOT_OWN_MENUS") && menubar_open(menu_titles, MENUS);
+	n_menus = game.ndiscs > 1 ? MENUS : 1;
+	native_bar = menubar_open(menu_titles, n_menus);
 	n_items = menu_items(bar_items);
 	if (native_bar)
 		menubar_set(bar_items, n_items);
+	fit_window();                   /* room for the menu bar above the picture */
 	SDL_SetWindowMinimumSize(rg_win, rg_to_window(320 * pic_scale()), rg_to_window(200 * pic_scale() + bar_px()));
 	fit_window();
 	icon_tex = rg_image_texture(icon, 128, 128, 1);
@@ -724,13 +662,13 @@ int game_main(const char *id, const char *test_script)
 			picture_rect(&r, &zoom);
 			px = (int)((rg_in.x * rg_scale - r.x) / zoom);
 			py = (int)((rg_in.y * rg_scale - r.y) / zoom) / (emu_dbl ? 2 : 1);
-			over = !booting && !open_menu && rg_in.x >= 0 && px >= 0 && px < emu_w && py >= 0 && py < emu_h;
+			over = !booting && rg_in.x >= 0 && px >= 0 && px < emu_w && py >= 0 && py < emu_h;
 			if (over)       /* the usual modes are 1280 OS units across, and 2 a line, or 4 a doubled one */
 				emu_host_pointer(px * 1280 / emu_w, (emu_h - 1 - py) * (emu_dbl ? 4 : 2));
 			b = over ? SDL_GetMouseState(NULL, NULL) : 0;
 			emu_mouse(0, 0, (b & SDL_BUTTON_LMASK ? 1 : 0) | (b & SDL_BUTTON_RMASK ? 2 : 0) | (b & SDL_BUTTON_MMASK ? 4 : 0));
 		}
-		else if (!booting && !open_menu && rg_in.pressed && !captured && (fullscreen || rg_in.y * rg_scale >= bar_px()))
+		else if (!booting && rg_in.pressed && !captured && (fullscreen || rg_in.y * rg_scale >= bar_px()))
 			set_capture(1);
 		if (captured)
 		{
@@ -839,8 +777,6 @@ int game_main(const char *id, const char *test_script)
 			draw_splash(cs, script_cs + 150);
 		else
 			draw_picture();
-		if (!booting)
-			quit |= draw_menus(items, n_items);
 		draw_note();
 		if (shot)
 			rg_save_shot(shot);

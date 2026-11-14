@@ -96,7 +96,7 @@ Click on the picture to give the mouse to the game. The left button is Select, t
 
 Escape never reaches the game. A game that wants it gets it from **Send ESC** at the bottom of the Game menu, in the window's menu bar.
 
-In full screen there is no menu bar. A bar with the two menus comes down when the pointer touches the top of the screen, once the mouse is free.
+In full screen there is no menu bar, and Alt+Enter comes back to the window.
 
 Drag the window's edge or maximize it and the picture grows to fill the frame, keeping its shape. A size from the Game menu puts the window back to an exact multiple.
 
@@ -120,7 +120,7 @@ Disc images are never written to. What a game writes goes to `<image>.sav` besid
 
 A Classics game comes as a zip of RISC OS applications, which Install lays out as ADFS D format floppy images. ROO311 carries a small module, HostLink, that lets PiArcBoot start the application and click its icon bar icon. HostLink can start applications, click icon bar icons, move the pointer and report screen mode changes, and nothing more. The zips are mirrored in `distributable-games`, each with where it came from and the terms it is distributed under.
 
-The picture comes from ArcEm's display driver and is scaled by the graphics chip, with pixels repeated to the nearest whole size and only the edges between them blended, so it stays sharp at any window size. Sound is ArcEm's mix of the VIDC's 8 channels at 48 kHz, resampled slightly to keep about 80 ms queued. The launcher, the splash screen and the drawn menu bar use [ROOGUI](https://github.com/jameshansen/ROOGUI), a separate library that draws the RISC OS look from RISC OS Open's sprites and fonts at any display scale.
+The picture comes from ArcEm's display driver and is scaled by the graphics chip, with pixels repeated to the nearest whole size and only the edges between them blended, so it stays sharp at any window size. Sound is ArcEm's mix of the VIDC's 8 channels at 48 kHz, resampled slightly to keep about 80 ms queued. The launcher and the splash screen use [ROOGUI](https://github.com/jameshansen/ROOGUI), a separate library that draws the RISC OS look from RISC OS Open's sprites and fonts at any display scale.
 
 ## Building
 
