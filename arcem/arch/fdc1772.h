@@ -1,0 +1,124 @@
+/* Emulation of 1772 fdc - (C) David Alan Gilbert 1995 */
+/* (c) David Alan Gilbert 1995 - see Readme file for copying info */
+#ifndef FDC1772
+#define FDC1772
+
+#include "../armdefs.h"
+
+/**
+ * FDC_Init
+ *
+ * Called on program startup, initialise the 1772 disk controller
+ *
+ * @param state Emulator state IMPROVE unused
+ */
+void FDC_Init(ARMul_State *state);
+
+/**
+ * FDC_Read
+ *
+ * Read from the 1772 FDC controller's registers
+ *
+ * @param state  Emulator State
+ * @param offset Containing the FDC register
+ * @returns      Value of register, or 0 on register not handled
+ */
+uint_fast8_t FDC_Read(ARMul_State *state, uint_fast16_t offset);
+
+/**
+ * FDC_Write
+ *
+ * Write to the 1772 FDC controller's registers
+ *
+ * @param state  Emulator State
+ * @param offset Containing the FDC register
+ * @param data   Data field to write
+ */
+void FDC_Write(ARMul_State *state, uint_fast16_t offset, uint_fast8_t data);
+
+/**
+ * FDC_LatchAChange
+ *
+ * Callback function, whenever LatchA is written too (regardless of
+ * whether the value has changed).
+ *
+ * @param state Emulator state
+ */
+void FDC_LatchAChange(ARMul_State *state,uint_fast8_t data);
+
+/**
+ * FDC_LatchBChange
+ *
+ * Callback function, whenever LatchB is written too (regardless of
+ * whether the value has changed).
+ *
+ * @param state Emulator state
+ */
+void FDC_LatchBChange(ARMul_State *state,uint_fast8_t data);
+
+/**
+ * FDC_InsertFloppy
+ *
+ * Associate disc image with drive.Drive must be empty
+ * on startup or having been previously ejected.
+ *
+ * @param drive Drive number to load image into [0-3]
+ * @param image Filename of image to load
+ * @returns NULL on success or string of error message
+ */
+const char *FDC_InsertFloppy(uint_fast8_t drive, const char *image);
+
+/**
+ * FDC_EjectFloppy
+ *
+ * Close and forget about the disc image associated with drive.  Disc
+ * must be inserted.
+ *
+ * @param drive Drive number to unload image [0-3]
+ * @returns NULL on success or string of error message
+ */
+const char *FDC_EjectFloppy(uint_fast8_t drive);
+
+/**
+ * FDC_IsFloppyInserted
+ *
+ * Check if there's a floppy disc inserted in the specified drive.
+ *
+ * @param drive Drive number to check [0-3]
+ * @returns true if a disc is inserted, false otherwise
+ */
+bool FDC_IsFloppyInserted(uint_fast8_t drive);
+
+/**
+ * FDC_Regular
+ *
+ * Called regulaly from the DispKbd poll loop.
+ *
+ * @param state State of the emulator
+ */
+void FDC_Regular(ARMul_State *state);
+
+/**
+ * FDC_SetLEDsChangeFunc
+ *
+ * If your platform wants to it can assign a function
+ * to be called back each time the Floppy Drive LEDs
+ * change.
+ * Each time they change the callback function will recieve
+ * the state of the LEDs in the 'leds' parameter. See
+ * X/ControlPane.c  draw_floppy_leds() for an example of
+ * how to process the parameter.
+ *
+ * @param leds_changed Function to callback on LED changes
+ */
+void FDC_SetLEDsChangeFunc(void (*leds_changed)(uint_fast8_t leds));
+
+/**
+ * FDC_UpdateLEDs
+ *
+ * Updates the LED callback with the current state.
+ *
+ */
+void FDC_UpdateLEDs(void);
+
+#endif

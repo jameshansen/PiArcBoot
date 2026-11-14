@@ -1,0 +1,334 @@
+/*  arminit.c -- ARMulator initialization:  ARM6 Instruction Emulator.
+    Copyright (C) 1994 Advanced RISC Machines Ltd.
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
+
+#include <stdlib.h>
+#include "armdefs.h"
+#include "armemu.h"
+#include "armcopro.h"
+#include "arch/ArcemConfig.h"
+#include "arch/ControlPane.h"
+#include "arch/dbugsys.h"
+#include "arch/fastmap.h"
+#include "eventq.h"
+#include "hostfs.h"
+
+bool (*ARMul_HostSWI)(ARMul_State *state, unsigned number) = NULL;
+
+FastMapEntry FastMap[FASTMAP_SIZE];
+
+/***************************************************************************\
+*                 Definitions for the emulator architecture                 *
+\***************************************************************************/
+
+const uint_least8_t ARMul_MultTable[32] = { 1,  2,  2,  3,  3,  4,  4,  5,
+                                            5,  6,  6,  7,  7,  8,  8,  9,
+                                            9, 10, 10, 11, 11, 12, 12, 13,
+                                           13, 14, 14, 15, 15, 16, 16, 16};
+
+#ifdef ARMUL_USE_IMMEDTABLE
+ARMword ARMul_ImmedTable[4096]; /* immediate DP LHS values */
+#endif
+uint_least8_t ARMul_BitList[256]; /* number of bits in a byte table */
+
+uint_least16_t ARMul_CCTable[16];
+
+/***************************************************************************\
+*         Call this routine once to set up the emulator's tables.           *
+\***************************************************************************/
+
+void ARMul_EmulateInit(void) {
+  unsigned int i, j;
+
+#ifdef ARMUL_USE_IMMEDTABLE
+  for (i = 0; i < 4096; i++) { /* the values of 12 bit dp rhs's */
+    ARMul_ImmedTable[i] = ROTATER(i & 0xffL,(i >> 7L) & 0x1eL);
+  }
+#endif
+
+  for (i = 0; i < 256; ARMul_BitList[i++] = 0 ); /* how many bits in LSM */
+  for (j = 1; j < 256; j <<= 1)
+    for (i = 0; i < 256; i++)
+      if ((i & j) > 0 )
+         ARMul_BitList[i]++;
+
+  for (i = 0; i < 256; i++)
+    ARMul_BitList[i] *= 4; /* you always need 4 times these values */
+
+#define V ((i&1)!=0)
+#define C ((i&2)!=0)
+#define Z ((i&4)!=0)
+#define N ((i&8)!=0)
+#define COMPUTE(CC,TST) ARMul_CCTable[CC] = 0; for(i=0;i<16;i++) if(TST) ARMul_CCTable[CC] |= 1<<i;
+  COMPUTE(EQ,Z)
+  COMPUTE(NE,!Z)
+  COMPUTE(CS,C)
+  COMPUTE(CC,!C)
+  COMPUTE(MI,N)
+  COMPUTE(PL,!N)
+  COMPUTE(VS,V)
+  COMPUTE(VC,!V)
+  COMPUTE(HI,C&&!Z)
+  COMPUTE(LS,!C||Z)
+  COMPUTE(GE,N==V)
+  COMPUTE(LT,N!=V)
+  COMPUTE(GT,!Z&&(N==V))
+  COMPUTE(LE,Z||(N!=V))
+  COMPUTE(AL,1)
+  ARMul_CCTable[NV] = 0;
+#undef V
+#undef C
+#undef Z
+#undef N
+#undef COMPUTE
+}
+
+
+/***************************************************************************\
+*            Returns a new instantiation of the ARMulator's state           *
+\***************************************************************************/
+
+ARMul_State *ARMul_NewState(ArcemConfig *pConfig)
+{ARMul_State *state;
+ unsigned i, j;
+
+ ARMul_EmulateInit();
+
+ state = state_alloc(sizeof(ARMul_State));
+ if (!state) {
+    ControlPane_Error(false,"Could not allocate emulation state");
+    return NULL;
+ }
+
+ for (i = 0; i < 16; i++) {
+    state->Reg[i] = 0;
+    for (j = 0; j < 4; j++)
+       state->RegBank[j][i] = 0;
+    }
+
+ state->Aborted = ARMul_ResetV;
+ state->Display = NULL;
+ state->FastMap = FastMap;
+ state->Config  = pConfig;
+
+ switch (CONFIG.eProcessor) {
+ case Processor_ARM2:
+     state->HasSWP  = false;
+     state->HasCP15 = false;
+     break;
+ case Processor_ARM250:
+     state->HasSWP  = true;
+     state->HasCP15 = false;
+     break;
+ case Processor_ARM3:
+ default:
+     state->HasSWP  = true;
+     state->HasCP15 = true;
+     break;
+ }
+ 
+ ARMul_Reset(state);
+ EventQ_Init(state);
+ ARMul_Reset(state);
+ if (!ARMul_MemoryInit(state)) {
+    ARMul_FreeState(state);
+    return NULL;
+ }
+#ifdef ARMUL_COPRO_SUPPORT
+ if (!ARMul_CoProInit(state)) {
+    ARMul_FreeState(state);
+    return NULL;
+ }
+#else
+ if (state->HasCP15) {
+    ControlPane_Error(false,"ARM3 support is not available in this build of ArcEm. Exiting");
+    ARMul_FreeState(state);
+    return NULL;
+ }
+#endif
+ ARMul_Reset(state);
+
+ return(state);
+ }
+
+/***************************************************************************\
+*     Frees a previously created instantiation of the ARMulator's state     *
+\***************************************************************************/
+
+void ARMul_FreeState(ARMul_State *state)
+{
+#ifdef ARMUL_COPRO_SUPPORT
+ ARMul_CoProExit(state);
+#endif
+ ARMul_MemoryExit(state);
+ state_free(state);
+}
+
+/***************************************************************************\
+* Call this routine to set up the initial machine state (or perform a RESET *
+\***************************************************************************/
+
+void ARMul_Reset(ARMul_State *state)
+{state->NextInstr = 0;
+    state->Reg[15] = R15INTBITS | SVC26MODE;
+ ARMul_R15Altered(state);
+ state->Bank = SVCBANK;
+ FLUSHPIPE;
+
+ state->Exception = 0;
+ state->NtransSig = (R15MODE) ? HIGH : LOW;
+ state->abortSig = LOW;
+ state->AbortAddr = 1;
+
+ state->NumCycles = 0;
+}
+
+void ARMul_Exit(ARMul_State *state, uint_least8_t exit_code) {
+  state->ExitCode = exit_code;
+  state->KillEmulator = true;
+}
+
+int ARMul_DoProg(ARMul_State *state) {
+  ARMul_Emulate26(state);
+  state->Reg[15] -= 8; /* undo the pipeline (bogus?) */
+
+  return(state->ExitCode);
+}
+
+/***************************************************************************\
+* This routine causes an Abort to occur, including selecting the correct    *
+* mode, register bank, and the saving of registers.  Call with the          *
+* appropriate vector's memory address (0,4,8 ....)                          *
+\***************************************************************************/
+
+void ARMul_Abort(ARMul_State *state, ARMword vector) {
+  ARMword temp;
+  state->Aborted = ARMul_ResetV;
+
+  dbug("ARMul_Abort: vector=0x%"PRIx32"\n",vector);
+
+  temp = state->Reg[15];
+
+  switch (vector) {
+    case ARMul_ResetV : /* RESET */
+       SETABORT(R15INTBITS,SVC26MODE);
+       ARMul_R15Altered(state);
+       state->Reg[14] = temp;
+       break;
+
+    case ARMul_UndefinedInstrV : /* Undefined Instruction */
+       SETABORT(R15IBIT,SVC26MODE);
+       ARMul_R15Altered(state);
+       state->Reg[14] = temp - 4;
+       /*dbug("DAG: In ARMul_Abort: Taking undefined instruction trap R[14] being set to: 0x%08"PRIx32"\n",
+               state->Reg[14]); */
+       break;
+
+    case ARMul_SWIV: /* Software Interrupt */
+       {
+         ARMword addr = (state->Reg[15]-8) & R15PCBITS;
+         FastMapEntry *entry = FastMap_GetEntryNoWrap(state,addr);
+         FastMapRes res = FastMap_DecodeRead(entry,state->FastMapMode);
+         ARMword instr;
+         if(FASTMAP_RESULT_DIRECT(res))
+         {
+           instr = *(FastMap_Log2Phy(entry,addr));
+         }
+         else if(FASTMAP_RESULT_FUNC(res))
+         {
+           instr = FastMap_LoadFunc(entry,state,addr);
+         }
+         else
+           instr = 0; /* This should never happen! */
+         if ((instr & 0xfdffc0) == ARCEM_SWI_CHUNK) {
+           switch (instr & 0x3f) {
+           case ARCEM_SWI_SHUTDOWN-ARCEM_SWI_CHUNK:
+             ARMul_Exit(state,state->Reg[0] & 0xff);
+             break;
+#ifdef HOSTFS_SUPPORT
+           case ARCEM_SWI_HOSTFS-ARCEM_SWI_CHUNK:
+             hostfs(state);
+             /* hostfs operation may have taken a while; update EmuRate to try and mitigate any audio buffering issues */
+             EmuRate_Update(state);
+             return;
+#endif
+           case ARCEM_SWI_DEBUG-ARCEM_SWI_CHUNK:
+             warn("r0 = %08"PRIx32"  r4 = %08"PRIx32"  r8  = %08"PRIx32"  r12 = %08"PRIx32"\n"
+                  "r1 = %08"PRIx32"  r5 = %08"PRIx32"  r9  = %08"PRIx32"  sp  = %08"PRIx32"\n"
+                  "r2 = %08"PRIx32"  r6 = %08"PRIx32"  r10 = %08"PRIx32"  lr  = %08"PRIx32"\n"
+                  "r3 = %08"PRIx32"  r7 = %08"PRIx32"  r11 = %08"PRIx32"  pc  = %08"PRIx32"\n"
+                  "\n",
+               state->Reg[0], state->Reg[4], state->Reg[8], state->Reg[12],
+               state->Reg[1], state->Reg[5], state->Reg[9], state->Reg[13],
+               state->Reg[2], state->Reg[6], state->Reg[10], state->Reg[14],
+               state->Reg[3], state->Reg[7], state->Reg[11], state->Reg[15]);
+             {
+               unsigned p;
+   
+               for (p = state->Reg[15]; p < state->Reg[15] + 16; p += 4) {
+               }
+             }
+             break;
+           default:
+             if (ARMul_HostSWI && ARMul_HostSWI(state, instr & 0x3f)) {
+               state->Reg[15] &= ~VBIT;
+               return;
+             }
+             break;
+           }
+         }
+         SETABORT(R15IBIT,SVC26MODE);
+         ARMul_R15Altered(state);
+         state->Reg[14] = temp - 4;
+       }
+       break;
+
+    case ARMul_PrefetchAbortV : /* Prefetch Abort */
+       state->AbortAddr = 1;
+       SETABORT(R15IBIT,SVC26MODE);
+       ARMul_R15Altered(state);
+       state->Reg[14] = temp - 4;
+       break;
+
+    case ARMul_DataAbortV : /* Data Abort */
+       SETABORT(R15IBIT,SVC26MODE);
+       ARMul_R15Altered(state);
+       state->Reg[14] = temp - 4; /* the PC must have been incremented */
+       break;
+
+    case ARMul_AddrExceptnV : /* Address Exception */
+       SETABORT(R15IBIT,SVC26MODE);
+       ARMul_R15Altered(state);
+       state->Reg[14] = temp - 4;
+       break;
+
+    case ARMul_IRQV : /* IRQ */
+       SETABORT(R15IBIT,IRQ26MODE);
+       ARMul_R15Altered(state);
+       state->Reg[14] = temp - 4;
+       break;
+
+    case ARMul_FIQV : /* FIQ */
+       SETABORT(R15INTBITS,FIQ26MODE);
+       ARMul_R15Altered(state);
+       state->Reg[14] = temp - 4;
+       break;
+  }
+
+  state->Reg[15] = R15CCINTMODE | vector;
+  ARMul_R15Altered(state);
+ FLUSHPIPE;
+}

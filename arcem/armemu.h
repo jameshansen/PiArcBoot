@@ -1,0 +1,413 @@
+/*  armemu.h -- ARMulator emulation macros:  ARM6 Instruction Emulator.
+    Copyright (C) 1994 Advanced RISC Machines Ltd.
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA. */
+
+/* DAG - added header recursion tests */
+#ifndef ARMEMU_HEADER
+#define ARMEMU_HEADER
+
+/* Control the use of the immediate constant table (ARMul_ImmedTable)
+   On ARM we don't want to use it, as it's about 8% slower than using the barrel shifter directly
+   Other platforms with decent a rotate right instruction may want to avoid using the table too
+*/
+
+#if defined(__i386__) || defined(_M_IX86)
+#define ARMUL_ARCH_I386
+#endif
+
+#if defined(__x86_64__) || defined(_M_X64)
+#define ARMUL_ARCH_X64
+#endif
+
+#if defined(__arm__) || defined(_M_ARM)
+#define ARMUL_ARCH_ARM
+#endif
+
+#if defined(__aarch64__) || defined(_M_ARM64)
+#define ARMUL_ARCH_ARM64
+#endif
+
+#if defined(__PPC__)
+#define ARMUL_ARCH_PPC
+#endif
+
+#ifndef ARMUL_ARCH_ARM
+#ifndef ARMUL_ARCH_ARM64
+#ifndef ARMUL_ARCH_PPC
+#ifndef ARMUL_ARCH_I386
+#ifndef ARMUL_ARCH_X64
+#define ARMUL_USE_IMMEDTABLE
+#endif
+#endif
+#endif
+#endif
+#endif
+
+#include "c99.h"
+#include "arch/fastmap.h"
+#include <stdlib.h>
+
+/***************************************************************************\
+*                           Condition code values                           *
+\***************************************************************************/
+
+#define EQ 0
+#define NE 1
+#define CS 2
+#define CC 3
+#define MI 4
+#define PL 5
+#define VS 6
+#define VC 7
+#define HI 8
+#define LS 9
+#define GE 10
+#define LT 11
+#define GT 12
+#define LE 13
+#define AL 14
+#define NV 15
+
+/***************************************************************************\
+*                               Shift Opcodes                               *
+\***************************************************************************/
+
+#define LSL 0
+#define LSR 1
+#define ASR 2
+#define ROR 3
+
+/***************************************************************************\
+*               Macros to twiddle the status flags and mode                 *
+\***************************************************************************/
+
+#define NBIT (UINT32_C(1) << 31)
+#define ZBIT (UINT32_C(1) << 30)
+#define CBIT (UINT32_C(1) << 29)
+#define VBIT (UINT32_C(1) << 28)
+#define R15IBIT Exception_IRQ
+#define R15FBIT Exception_FIQ
+#define R15IFBITS (R15IBIT|R15FBIT)
+
+#define POS(i) ( (~(i)) >> 31 )
+#define NEG(i) ( (i) >> 31 )
+
+#define NFLAG ((state->Reg[15]>>31)&1)
+#define SETN state->Reg[15] |= NBIT
+#define CLEARN state->Reg[15] &= ~NBIT
+
+#define ZFLAG ((state->Reg[15]>>30)&1)
+#define SETZ state->Reg[15] |= ZBIT
+#define CLEARZ state->Reg[15] &= ~ZBIT
+
+#define CFLAG ((state->Reg[15]>>29)&1)
+#define SETC state->Reg[15] |= CBIT
+#define CLEARC state->Reg[15] &= ~CBIT
+
+#define VFLAG ((state->Reg[15]>>28)&1)
+#define SETV state->Reg[15] |= VBIT
+#define CLEARV state->Reg[15] &= ~VBIT
+
+#ifndef ARMUL_ARCH_ARM
+#define ASSIGNC(res) state->Reg[15] = (res?state->Reg[15]|CBIT:state->Reg[15]&~CBIT)
+#else
+#define ASSIGNC(res) inlASSIGN(state,res,CBIT)
+static inline void inlASSIGN(ARMul_State *state,ARMword res,ARMword bit)
+{
+	ARMword temp = state->Reg[15];
+	if(res)
+		temp |= bit;
+	else
+		temp &= ~bit;
+	state->Reg[15] = temp;
+}
+#endif
+
+#define IFLAG ((state->Reg[15]>>27)&1)
+#define FFLAG ((state->Reg[15]>>26)&1)
+#define IFFLAGS ((state->Reg[15]>>26)&3)
+#define ASSIGNR15INT(res) state->Reg[15] = (state->Reg[15]&~R15IFBITS) | ((res)&R15IFBITS)
+
+
+#define CCBITS (UINT32_C(0xf0000000))
+#define R15INTBITS (UINT32_C(3) << 26)
+#define R15PCBITS (UINT32_C(0x03fffffc))
+#define R15PCMODEBITS (UINT32_C(0x03ffffff))
+#define R15MODEBITS (UINT32_C(0x3))
+
+#define PCMASK R15PCBITS
+#define PCWRAP(pc) ((pc) & R15PCBITS)
+#define PC (state->Reg[15] & PCMASK)
+#define R15CCINTMODE (state->Reg[15] & (CCBITS | R15INTBITS | R15MODEBITS))
+#define R15INT (state->Reg[15] & R15INTBITS)
+#define R15INTPC (state->Reg[15] & (R15INTBITS | R15PCBITS))
+#define R15INTPCMODE (state->Reg[15] & (R15INTBITS | R15PCBITS | R15MODEBITS))
+#define R15INTMODE (state->Reg[15] & (R15INTBITS | R15MODEBITS))
+#define R15PC (state->Reg[15] & R15PCBITS)
+#define R15PCMODE (state->Reg[15] & (R15PCBITS | R15MODEBITS))
+#define R15MODE (state->Reg[15] & R15MODEBITS)
+
+#define ECC (state->Reg[15] & CCBITS)
+#define ER15INT (state->Reg[15] & R15IFBITS)
+#define EMODE (state->Reg[15] & R15MODEBITS)
+
+#define SETR15PSR(s) if (R15MODE == USER26MODE) { \
+                        state->Reg[15] = ((s) & CCBITS) | R15INTPCMODE; \
+                        } \
+                     else { \
+                        state->Reg[15] = R15PC | ((s) & (CCBITS | R15INTBITS | R15MODEBITS)); \
+                        ARMul_R15Altered(state); \
+                        }
+#define SETABORT(i,m) state->Reg[15] = (state->Reg[15]&~R15MODEBITS) | (i) | (m)
+#define SETPC(pc) state->Reg[15] = (state->Reg[15]&~R15PCBITS)|((pc)&R15PCBITS)
+
+/* Assumed that 'amt' is a multiple of 4 */
+#ifdef ARMUL_USE_IMMEDTABLE
+/* Simple implementation for platforms without a rotate left/right instruction */
+#define INCPCAMT(amt) SETPC(state->Reg[15]+(amt))
+#else
+/* Using ROTATER should reduce the instruction count a bit */
+#define INCPCAMT(amt) do { \
+                        ARMword temp=state->Reg[15]; \
+                        temp = ROTATER(temp,26)+((amt)<<6); \
+                        state->Reg[15] = ROTATER(temp,6); \
+                      } while(0)
+#endif
+
+#define LEGALADDR (UINT32_C(0x03ffffff))
+#define ADDREXCEPT(address) (address >= (LEGALADDR+1))
+
+#define INTERNALABORT(address) state->Aborted = ARMul_AddrExceptnV;
+
+#define TAKEABORT if (state->Aborted == ARMul_AddrExceptnV) \
+                     ARMul_Abort(state,ARMul_AddrExceptnV); \
+                  else \
+                     ARMul_Abort(state,ARMul_DataAbortV)
+#define CPTAKEABORT if (!state->Aborted) \
+                       ARMul_Abort(state,ARMul_UndefinedInstrV); \
+                    else if (state->Aborted == ARMul_AddrExceptnV) \
+                       ARMul_Abort(state,ARMul_AddrExceptnV); \
+                    else \
+                       ARMul_Abort(state,ARMul_DataAbortV)
+
+
+/***************************************************************************\
+*               Different ways to start the next instruction                *
+\***************************************************************************/
+
+#define NORMALCYCLE state->NextInstr = NORMAL
+#define BUSUSEDN ((void)0) /* the next fetch will be an N cycle */
+#define BUSUSEDINCPCS state->Reg[15] += 4; /* a standard PC inc and an S cycle */ \
+                      state->NextInstr |= PCINCED
+#define BUSUSEDINCPCN state->Reg[15] += 4; /* a standard PC inc and an N cycle */ \
+                      state->NextInstr |= PCINCED
+#define INCPC state->Reg[15] += 4; /* a standard PC inc */ \
+                      state->NextInstr |= PCINCED
+#define FLUSHPIPE state->NextInstr |= PRIMEPIPE
+
+/***************************************************************************\
+*                          Cycle based emulation                            *
+\***************************************************************************/
+
+#define OUTPUTCP(i,a,b)
+#define NCYCLE
+#define SCYCLE
+#define ICYCLE
+#define CCYCLE
+#define NEXTCYCLE(c)
+
+/***************************************************************************\
+*                 States of the cycle based state machine                   *
+\***************************************************************************/
+
+
+/***************************************************************************\
+*                 Macros to extract parts of instructions                   *
+\***************************************************************************/
+
+#define DESTReg (BITS(12,15))
+#define LHSReg (BITS(16,19))
+#define RHSReg (BITS(0,3))
+
+#define DEST (state->Reg[DESTReg])
+
+#ifndef ARMUL_ARCH_ARM /* GCC makes a mess of this ternary op, much better to go with the hand-holding approach to ensure there's only one LDR */
+#define LHS ((LHSReg == 15) ? R15PC : (state->Reg[LHSReg]) )
+#else
+#define LHS inlLHS(state,LHSReg)
+static inline ARMword inlLHS(ARMul_State *state,ARMword r)
+{
+	ARMword lhs = state->Reg[r];
+	if(r == 15)
+		lhs &= R15PCBITS;
+	return lhs;
+}
+#endif
+
+#define MULDESTReg (BITS(16,19))
+#define MULLHSReg (BITS(0,3))
+#define MULRHSReg (BITS(8,11))
+#define MULACCReg (BITS(12,15))
+
+#ifdef ARMUL_USE_IMMEDTABLE
+#define DPImmRHS (ARMul_ImmedTable[BITS(0,11)])
+#define DPSImmRHS temp = BITS(0,11); \
+                  rhs = ARMul_ImmedTable[temp]; \
+                  if (temp > 255) /* there was a shift */ \
+                     ASSIGNC(rhs >> 31);
+#else
+#define DPImmRHS (ROTATER(BITS(0,7),BITS(8,11)<<1))
+#define DPSImmRHS temp = BITS(0,11); \
+                  rhs = ROTATER(BITS(0,7),BITS(8,11)<<1); \
+                  if (temp > 255) /* there was a shift */ \
+                     ASSIGNC(rhs >> 31);
+#endif
+
+#define DPRegRHS ((BITS(0,11)<15) ? state->Reg[RHSReg] \
+                                  : GetDPRegRHS(state, instr))
+#define DPSRegRHS ((BITS(0,11)<15) ? state->Reg[RHSReg] \
+                                   : GetDPSRegRHS(state, instr))
+
+#define LSBase state->Reg[LHSReg]
+#define LSImmRHS (BITS(0,11))
+
+#define LSRegRHS ((BITS(0,11)<15) ? state->Reg[RHSReg] \
+                                  : GetLSRegRHS(state, instr))
+
+#define LSMNumRegs ((ARMword)ARMul_BitList[BITS(0,7)] + \
+                    (ARMword)ARMul_BitList[BITS(8,15)] )
+#define LSMBaseFirst ((LHSReg == 0 && BIT(0)) || \
+                      (BIT(LHSReg) && BITS(0,LHSReg-1) == 0))
+
+#define SWAPSRC (state->Reg[RHSReg])
+
+#define LSCOff (BITS(0,7) << 2)
+#define CPNum BITS(8,11)
+
+/***************************************************************************\
+*                    Macro to rotate n right by b bits                      *
+\***************************************************************************/
+
+#if defined(_MSC_VER) || defined(__WATCOMC__)
+#define ROTATER(n,b) _rotr(n,b)
+#else
+#define ROTATER(n,b) (((n)>>(b))|((n)<<(32-(b))))
+#endif
+
+/***************************************************************************\
+*                 Macros to store results of instructions                   *
+\***************************************************************************/
+
+#define WRITEDEST(d) {/*dbug("WRITEDEST: %d=0x%08x\n",DESTReg,d);*/\
+                      if (DESTReg==15) \
+                        WriteR15(state, d); \
+                     else \
+                          DEST = d;\
+                      }
+
+#define WRITEDESTNORM(d) {/*dbug("WRITEDEST: %d=0x%08x\n",DESTReg,d);*/ DEST = d;}
+
+#define WRITEDESTPC(d) {/*dbug("WRITEDEST: %d=0x%08x\n", 15, d);*/ WriteR15(state, d);}
+
+#define WRITESDEST(d) { /*dbug("WRITESDEST: %d=0x%08x\n",DESTReg,d);*/\
+                      if (DESTReg == 15) \
+                         WriteSR15(state, d); \
+                      else { \
+                         DEST = d; \
+                         ARMul_NegZero(state, d); \
+                         };\
+                      }
+
+#define WRITESDESTNORM(d) {DEST = d; \
+                         ARMul_NegZero(state, d); }
+
+#define WRITESDESTPC(d) WriteSR15(state, d)
+
+#define LOADMULT(instr,address,wb) LoadMult(state,instr,address,wb)
+#define LOADSMULT(instr,address,wb) LoadSMult(state,instr,address,wb)
+#define STOREMULT(instr,address,wb) StoreMult(state,instr,address,wb)
+#define STORESMULT(instr,address,wb) StoreSMult(state,instr,address,wb)
+
+/***************************************************************************\
+*                      Stuff that is shared across modes                    *
+\***************************************************************************/
+
+void ARMul_Emulate26(ARMul_State *state);
+
+static inline void ARMul_Icycles(ARMul_State *state,unsigned number)
+{
+  state->NumCycles += number;
+  ARMul_CLEARABORT;
+}
+
+extern const uint_least8_t ARMul_MultTable[]; /* Number of I cycles for a mult */
+#ifdef ARMUL_USE_IMMEDTABLE
+extern ARMword ARMul_ImmedTable[]; /* Immediate DP LHS values */
+#endif
+extern uint_least8_t ARMul_BitList[];       /* Number of bits in a byte table */
+extern uint_least16_t ARMul_CCTable[16];
+#define ARMul_CCCheck(instr,psr) (ARMul_CCTable[instr>>28] & (1<<(psr>>28)))
+
+ARMword ARMul_SwitchMode(ARMul_State *state,ARMword oldmode, ARMword newmode);
+
+/***************************************************************************\
+* This routine updates the state of the emulator after register 15 has      *
+* been changed.  Both the processor flags and register bank are updated.    *
+* This routine should only be called from a 26 bit mode.                    *
+\***************************************************************************/
+
+static inline void ARMul_R15Altered(ARMul_State *state)
+{
+ register ARMword mode = R15MODE;
+ if (state->Bank != mode) {
+    ARMul_SwitchMode(state,state->Bank,mode);
+    state->NtransSig = (mode)?HIGH:LOW;
+    FastMap_RebuildMapMode(state);
+    }
+}
+
+/***************************************************************************\
+*                      Macros to scrutinise instructions                    *
+\***************************************************************************/
+
+
+#define UNDEF_Test
+#define UNDEF_Shift
+#define UNDEF_MSRPC
+#define UNDEF_MRSPC
+#define UNDEF_MULPCDest
+#define UNDEF_MULDestEQOp1
+#define UNDEF_LSRBPC
+#define UNDEF_LSRBaseEQOffWb
+#define UNDEF_LSRBaseEQDestWb
+#define UNDEF_LSRPCBaseWb
+#define UNDEF_LSRPCOffWb
+#define UNDEF_LSMNoRegs
+#define UNDEF_LSMPCBase
+#define UNDEF_LSMUserBankWb
+#define UNDEF_LSMBaseInListWb
+#define UNDEF_SWPPC
+#define UNDEF_CoProHS
+#define UNDEF_MCRPC
+#define UNDEF_LSCPCBaseWb
+#define UNDEF_UndefNotBounced
+#define UNDEF_ShortInt
+#define UNDEF_IllegalMode
+#define UNDEF_Prog32SigChange
+#define UNDEF_Data32SigChange
+
+#endif
+

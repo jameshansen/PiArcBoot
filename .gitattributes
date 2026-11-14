@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.png binary
+*.jfd binary
+*.zip binary
+ROM311 binary

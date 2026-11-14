@@ -1,0 +1,124 @@
+# Builds PiArcBoot on every push: for 64-bit Raspberry Pi OS on an ARM runner, for x86-64 Linux, and
+# for 64-bit Windows with zig. A version tag (v1.2.3) also publishes the three as a release of that
+# name, with docs/releases/v1.2.3.md and docs/releases/install.md as its notes, and the About tab
+# shows the tag's version.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ROOGUI_REF: bef48b528788c7af22a506da2de8f9c107943ac6   # the ROOGUI commit a release is built with
+  SDL_VERSION: 2.32.10
+  ZLIB_VERSION: 1.3.1
+  ZIG_VERSION: 0.16.0
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.arch }}
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            archive: PiArcBoot.tar.gz
+          - arch: x86-64
+            runner: ubuntu-24.04
+            archive: PiArcBoot-Linux-x86-64.tar.gz
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: jameshansen/ROOGUI
+          ref: ${{ env.ROOGUI_REF }}
+          path: roogui
+      - name: Install SDL2 and zlib
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev zlib1g-dev
+      - name: Build and run the self-tests
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then V=${GITHUB_REF_NAME#v}; else V=dev-${GITHUB_SHA::7}; fi
+          make -j"$(nproc)" VERSION="$V"
+          make check
+      - name: Package
+        run: |
+          mkdir -p dist/PiArcBoot
+          cp -r build/piarcboot build/libroogui.so build/LICENSE-ROOGUI ROM311 icons icon.png install.sh LICENSE dist/PiArcBoot/
+          tar -czf ${{ matrix.archive }} -C dist PiArcBoot
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+
+  windows:
+    name: Windows
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: jameshansen/ROOGUI
+          ref: ${{ env.ROOGUI_REF }}
+          path: roogui
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Fetch SDL2 and build zlib
+        run: |
+          mkdir -p deps && cd deps
+          curl -fsSL "https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/SDL2-devel-$SDL_VERSION-mingw.tar.gz" | tar -xz
+          curl -fsSL "https://github.com/madler/zlib/releases/download/v$ZLIB_VERSION/zlib-$ZLIB_VERSION.tar.gz" | tar -xz
+          cd "zlib-$ZLIB_VERSION"
+          # zlib1.dll exporting the functions PiArcBoot and ROOGUI call, with its import library
+          printf 'LIBRARY zlib1.dll\nEXPORTS\ninflateInit2_\ninflate\ninflateEnd\ninflateReset\ncompress2\ncompressBound\nuncompress\ncrc32\n' > zlib1.def
+          zig cc -target x86_64-windows-gnu -O2 -shared -o zlib1.dll adler32.c compress.c crc32.c deflate.c \
+            infback.c inffast.c inflate.c inftrees.c trees.c uncompr.c zutil.c zlib1.def -Wl,--out-implib,libz.dll.a
+      - name: Build
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then V=${GITHUB_REF_NAME#v}; else V=dev-${GITHUB_SHA::7}; fi
+          VERSION="$V" sh tools/build-windows.sh "$PWD/deps/SDL2-$SDL_VERSION/x86_64-w64-mingw32" "$PWD/deps/zlib-$ZLIB_VERSION"
+          cd build/win && zip -qr ../../PiArcBoot-Windows.zip PiArcBoot
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PiArcBoot-Windows.zip
+          path: PiArcBoot-Windows.zip
+
+  release:
+    name: Publish the release
+    if: github.ref_type == 'tag'
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # The release's own notes, what changed since the last one, are written in
+          # docs/releases/<tag>.md before the tag is pushed. Without them nothing is published.
+          if [ ! -f "docs/releases/$TAG.md" ]; then
+            echo "::error::docs/releases/$TAG.md is missing. Write the release notes before tagging."
+            exit 1
+          fi
+          { cat "docs/releases/$TAG.md"; echo; cat docs/releases/install.md; } > notes.md
+          files="out/PiArcBoot.tar.gz out/PiArcBoot-Linux-x86-64.tar.gz out/PiArcBoot-Windows.zip"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" $files --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" $files --verify-tag --title "PiArcBoot $TAG" --notes-file notes.md
+          fi

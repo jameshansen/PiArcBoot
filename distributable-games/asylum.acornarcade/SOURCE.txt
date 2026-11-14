@@ -1,0 +1,14 @@
+Asylum and Oddball
+
+Source: http://asylum.acornarcade.com/ (the downloads pages a_download.php and o_download.php)
+Downloaded: 13 November 2026, from http://asylum.acornarcade.com/files/<file>
+Kept here unchanged, as PiArcBoot's copy for installing them.
+
+Terms
+
+Asylum and Oddball were declared freeware by their author, Andy Southgate. Acorn Arcade runs the site that distributes them.
+
+Files
+
+asy202.zip    Asylum, version 2.02 (14 December 2002), by Andy Southgate. Patched by Jeffrey Lee for StrongARM machines, with a note in the game that it is now freeware.
+oddball.zip   Oddball, by Andy Southgate (1995).
