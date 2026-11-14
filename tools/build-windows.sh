@@ -50,6 +50,6 @@ zig cc -target x86_64-windows-gnu -o "$OUT/piarcboot.exe" $objs -lmingw32 \
   "$SDL/lib/libSDL2main.a" "$SDL/lib/libSDL2.dll.a" "$ZLIB/libz.dll.a" "$GUI/build/win/libroogui.dll.a" -lcomdlg32 -lshell32 -Wl,--subsystem,windows
 cp "$SDL/bin/SDL2.dll" "$ZLIB/zlib1.dll" "$GUI/build/win/roogui.dll" "$OUT/"
 cp "$GUI/LICENSE" "$OUT/LICENSE-ROOGUI"
-rm -rf "$OUT/icons"
-cp -r "$HERE/ROM311" "$HERE/icon.png" "$HERE/icons" "$HERE/LICENSE" "$OUT/"
+rm -rf "$OUT/icons" "$OUT/presets"
+cp -r "$HERE/ROM311" "$HERE/icon.png" "$HERE/icons" "$HERE/presets" "$HERE/LICENSE" "$OUT/"
 echo "built $OUT"

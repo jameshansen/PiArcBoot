@@ -50,7 +50,7 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist/PiArcBoot
-          cp -r build/piarcboot build/libroogui.so build/LICENSE-ROOGUI ROM311 icons icon.png install.sh LICENSE dist/PiArcBoot/
+          cp -r build/piarcboot build/libroogui.so build/LICENSE-ROOGUI ROM311 icons presets icon.png install.sh LICENSE dist/PiArcBoot/
           tar -czf ${{ matrix.archive }} -C dist PiArcBoot
       - uses: actions/upload-artifact@v4
         with:

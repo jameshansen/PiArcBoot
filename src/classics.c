@@ -7,9 +7,11 @@
    images of what the zip holds (adfs.c): its applications, each whole on one disc, the one the
    game starts from on the first. */
 #include <ctype.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <zlib.h>
 #include "piarcboot.h"
@@ -508,6 +510,102 @@ static int install_hostfs(const classic_t *c, const adfs_file_t *f, int n, const
 	return 0;
 }
 
+/* ---- Presets ----
+
+   Files PiArcBoot adds to a game as it installs it, such as a choices file that sets the game up
+   for its window, from presets/<game>/ beside the program (presets/README.md in the repository).
+   They are laid out as the game's own folder is and named as HostFS names files: the RISC OS / as
+   the computer's ., and a file's type after a comma, or its load and execution addresses. A file
+   with no type is text. A preset takes the place of the game's own file of the same name. */
+static void add_preset(const char *host, const char *rel, adfs_file_t **files, int *n)
+{
+	char path[512];
+	const char *comma = strrchr(rel, ','), *slash = strrchr(rel, '/');
+	uint32_t load = 0xFFFFFF41u, exec = 0x42F2D200u;        /* text, stamped 1 January 1992 like a zip's files */
+	size_t len, end = strlen(rel), i, k = 0;
+	unsigned a, b;
+	uint8_t *data;
+	int j;
+
+	if (comma && (!slash || comma > slash))
+	{
+		if (strlen(comma + 1) == 3 && strspn(comma + 1, "0123456789abcdefABCDEF") == 3)
+		{
+			load = 0xFFF00041u | (uint32_t)strtoul(comma + 1, NULL, 16) << 8;
+			end = (size_t)(comma - rel);
+		}
+		else if (sscanf(comma + 1, "%8x-%8x", &a, &b) == 2)
+		{
+			load = a;
+			exec = b;
+			end = (size_t)(comma - rel);
+		}
+	}
+	for (i = 0; i < end && k + 1 < sizeof path; i++)
+		path[k++] = rel[i] == '/' ? '.' : rel[i] == '.' ? '/' : rel[i];
+	path[k] = 0;
+	data = file_read(host, &len);
+	if (!data)
+		return;
+	for (j = 0; j < *n; j++)        /* the game's own file of that name, if it has one; RISC OS ignores case */
+	{
+		const char *x = (*files)[j].path, *y = path;
+
+		for (; *x && tolower((unsigned char)*x) == tolower((unsigned char)*y); x++, y++);
+		if (!*x && !*y)
+			break;
+	}
+	if (j == *n)
+	{
+		*files = realloc(*files, (size_t)(*n + 1) * sizeof **files);
+		memset(&(*files)[j], 0, sizeof **files);
+		(*files)[j].path = strdup(path);
+		(*files)[j].attr = 3;
+		(*n)++;
+	}
+	else
+		free((uint8_t *)(*files)[j].data);
+	(*files)[j].load = load;
+	(*files)[j].exec = exec;
+	(*files)[j].data = data;
+	(*files)[j].len = (uint32_t)len;
+	(*files)[j].dir = 0;
+}
+
+static void add_presets_in(const char *dir, const char *rel, adfs_file_t **files, int *n)
+{
+	DIR *d = opendir(dir);
+	struct dirent *e;
+
+	while (d && (e = readdir(d)))
+	{
+		char host[1400], sub[700];
+		struct stat st;
+
+		if (e->d_name[0] == '.')
+			continue;
+		snprintf(host, sizeof host, "%s/%s", dir, e->d_name);
+		snprintf(sub, sizeof sub, "%s%s%s", rel, rel[0] ? "/" : "", e->d_name);
+		if (stat(host, &st))
+			continue;
+		if (S_ISDIR(st.st_mode))
+			add_presets_in(host, sub, files, n);
+		else
+			add_preset(host, sub, files, n);
+	}
+	if (d)
+		closedir(d);
+}
+
+static void add_presets(const char *id, adfs_file_t **files, int *n)
+{
+	char name[160], dir[1024];
+
+	snprintf(name, sizeof name, "presets/%s", id);
+	if (store_asset(name, dir, sizeof dir))
+		add_presets_in(dir, "", files, n);
+}
+
 int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 {
 	char part[1024], final[1024], path[1100], url[600], error[240];
@@ -563,6 +661,7 @@ int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 		remove_tree(part);
 		return fail(p, "The download isn't a zip of the game.");
 	}
+	add_presets(c->id, &files, &n);
 	if (c->support[0])
 	{
 		if (install_hostfs(c, files, n, part, p))

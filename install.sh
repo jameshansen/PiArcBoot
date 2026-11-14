@@ -29,7 +29,7 @@ note() { zenity --info --title="$TITLE" --width=560 --icon="$ICON" --text="$1" 2
 fail() { zenity --error --title="$TITLE" --width=560 --no-markup --text="$1" 2>/dev/null; exit 1; }
 busy() { zenity --progress --title="$TITLE" --width=560 --no-cancel --auto-close "$@" 2>/dev/null; }
 
-for f in ROM311 icon.png icons LICENSE; do
+for f in ROM311 icon.png icons presets LICENSE; do
   [ -e "$HERE/$f" ] || fail "$f is missing from beside install.sh. Download the whole package again."
 done
 command -v curl >/dev/null ||
@@ -75,11 +75,11 @@ GUI="$(dirname "$BIN")"         # ROOGUI's library and its licence are beside th
 install_files() (
   set -e
   mkdir -p "$DEST" "$(dirname "$MENU")" "$(dirname "$SHORTCUT")"
-  rm -rf "$DEST/icons"
+  rm -rf "$DEST/icons" "$DEST/presets"
   echo "# Copying PiArcBoot..."
   cp "$BIN" "$GUI/libroogui.so" "$DEST/"
   [ ! -f "$GUI/LICENSE-ROOGUI" ] || cp "$GUI/LICENSE-ROOGUI" "$DEST/"
-  cp -r "$HERE/ROM311" "$HERE/icon.png" "$HERE/icons" "$HERE/LICENSE" "$DEST/"
+  cp -r "$HERE/ROM311" "$HERE/icon.png" "$HERE/icons" "$HERE/presets" "$HERE/LICENSE" "$DEST/"
   echo 80
   echo "# Adding the menu entry and the desktop shortcut..."
   cat >"$MENU" <<EOF

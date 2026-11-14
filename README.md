@@ -122,6 +122,8 @@ A Classics game comes as a zip of RISC OS applications, which Install lays out a
 
 A game that needs more than RISC OS 3.11 had, Star Fighter 3000 so far, gets [ROO311's support pack](https://github.com/jameshansen/ROO311#support-pack), mirrored in `distributable-games/support-packs`. Its nested Window Manager goes in an extension ROM with ArcEm's HostFS module, and RISC OS takes both up at power on, the Window Manager in place of the ROM's own, since it can't be replaced once the desktop has started. The game goes in a folder that HostFS shows the machine, with the pack's `!System` of Toolbox modules and its `!Scrap`, which HostLink boots before it runs the game.
 
+A Classics game can also have presets, files that Install adds to the game's own, such as the choices file that starts Star Fighter 3000 full screen where it would otherwise open in a desktop window. They are in `presets/`, a folder for each game laid out as the game's own folder is, and `presets/README.md` describes them.
+
 The picture comes from ArcEm's display driver and is scaled by the graphics chip, with pixels repeated to the nearest whole size and only the edges between them blended, so it stays sharp at any window size. Sound is ArcEm's mix of the VIDC's 8 channels at 48 kHz, resampled slightly to keep about 80 ms queued. The launcher and the splash screen use [ROOGUI](https://github.com/jameshansen/ROOGUI), a separate library that draws the RISC OS look from RISC OS Open's sprites and fonts at any display scale.
 
 ## Building
@@ -155,6 +157,7 @@ sh tools/build-windows.sh <SDL2 folder> <zlib folder>
 | `tests/` | Scripts that boot every game in the table, compare pictures and test writing to discs |
 | `tools/` | The Windows build and the script that makes the game table |
 | `icons/` | The games' icons, made from their sprites |
+| `presets/` | Files Install adds to a game, such as a choices file that suits PiArcBoot's window |
 | `docs/` | Screenshots and release notes |
 | `ROM311` | The ROM image from ROO311's releases |
 | `distributable-games/` | The Classics games' zips, kept for installing from and not part of a release |
