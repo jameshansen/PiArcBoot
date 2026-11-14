@@ -190,8 +190,11 @@ typedef struct
 	char prefix[128];       /* the folder in the zip that holds what goes on the disc */
 	char boot[40];          /* the application that starts the game */
 	int section;
-	char support[32];       /* the support pack it needs, from ROO311, or "": it then goes in a HostFS folder, not on floppies */
 } classic_t;
+
+/* A setting from presets/<game>.ini beside the program, which presets/README.md in the repository
+   describes. 1 with its value in buf if the game's file has the key. */
+int preset_setting(const char *id, const char *key, char *buf, size_t size);
 
 int classic_count(void);
 const classic_t *classic_entry(int i);

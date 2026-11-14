@@ -40,10 +40,9 @@ static const classic_t arcade[] = {
 	{ "Ixion", "Ixion", "1992, Tom Cooper and Barry Clarkson, Software 42", "acornarcade/ixion.zip", ARCADE "ixion.zip", "Ixion/", "!Ixion", CLASSIC_ARCADE },
 	{ "Oddball", "Oddball", "1995, Andy Southgate", "asylum.acornarcade/oddball.zip", ASYLUM "oddball.zip", "OddballFD/", "!OddBall", CLASSIC_ARCADE },
 	{ "Revolver", "Revolver", "Psycore, from PomPom Games", "acornarcade/revolver.zip", ARCADE "revolver.zip", "", "!revolver", CLASSIC_ARCADE },
-	/* release 3.21, free from its own site, which is where it comes from. It wants the nested Window
-	   Manager and the Toolbox, from ROO311's support pack, and is too big for an 800K floppy. */
+	/* release 3.21, free from its own site, which is where it comes from (its presets give it ROO311's support pack) */
 	{ "Star-Fighter-3000", "Star Fighter 3000", "1994, Fednet Software, release 3.21 by Christopher Bazley", "",
-	  "http://starfighter.acornarcade.com/download/sf3000.zip", "", "!Star3000", CLASSIC_ARCADE, "toolbox" },
+	  "http://starfighter.acornarcade.com/download/sf3000.zip", "", "!Star3000", CLASSIC_ARCADE },
 	{ "Terramex", "Terramex", "1987, Shaun Hollingworth and Pete Harrap, Krisalis Software", "acornarcade/terra.zip",
 	  ARCADE "terra.zip", "", "!Terramex", CLASSIC_ARCADE },
 };
@@ -166,23 +165,9 @@ static void resolve(const char *base, const char *rel, char *out, size_t size)
 	snprintf(out, size, "%s/%s", dir, rel);
 }
 
-/* Packages that pass the test below but were found not to run on RISC OS 3.11 alone: Hopper and
-   MineHunt want a System: path and a newer C library, Hangman the Impression spelling module,
-   Puzzle a Choices: path, Mitosis the IfThere command of later versions, and Freepat and
-   MagicMush are bigger than a floppy disc */
-static int wont_run(const char *name)
-{
-	static const char *const names[] = { "Hopper", "MineHunt", "Hangman", "Puzzle", "Mitosis", "Freepat", "MagicMush" };
-	size_t i;
-
-	for (i = 0; i < sizeof names / sizeof *names; i++)
-		if (!strcmp(name, names[i]))
-			return 1;
-	return 0;
-}
-
 /* The games in one index that may run on RISC OS 3.11: in the Games section, free, needing no
-   other package, and for any processor rather than ARM code built for later machines */
+   other package, and for any processor rather than ARM code built for later machines. A package
+   found not to run anyway has a skip setting in its presets, saying why. */
 static void parse_index(const char *url, char *text)
 {
 	char *rec = text;
@@ -217,20 +202,22 @@ static void parse_index(const char *url, char *text)
 			else if (!strcmp(line, "Depends")) depends = 1;
 		}
 		rec = end ? end + 2 : NULL;
-		if (!name[0] || strcmp(section, "Games") || strcmp(licence, "Free") || depends || (env[0] && strcmp(env, "any")) || !where[0] ||
-		    wont_run(name))
+		if (!name[0] || strcmp(section, "Games") || strcmp(licence, "Free") || depends || (env[0] && strcmp(env, "any")) || !where[0])
 			continue;
 		{
 			classic_t *c = &packman[n_packman];
-			char *bang, *dot;
+			char *bang, *dot, id[90], why[200];
 			int i, dup = 0;
 
+			snprintf(id, sizeof id, "pkg-%s", name);
+			if (preset_setting(id, "skip", why, sizeof why))
+				continue;
 			for (i = 0; i < n_packman; i++)
 				dup |= !strcmp(packman[i].title, name);
 			if (dup)
 				continue;
 			memset(c, 0, sizeof *c);
-			snprintf(c->id, sizeof c->id, "pkg-%s", name);
+			snprintf(c->id, sizeof c->id, "%s", id);
 			snprintf(c->title, sizeof c->title, "%s", name);
 			snprintf(c->info, sizeof c->info, "%s", desc);
 			resolve(url, where, c->url, sizeof c->url);
@@ -441,7 +428,7 @@ static int put_file(const char *path, const void *data, size_t len)
 /* A game that needs a support pack goes in a folder HostFS shows the machine, hostfs/, with the
    pack's !System and !Scrap beside it. The pack's extrom/ folder, and HostFS itself, make the
    extension ROM the machine starts with, extrom/. */
-static int install_hostfs(const classic_t *c, const adfs_file_t *f, int n, const char *part, progress_t *p)
+static int install_hostfs(const classic_t *c, const char *support, const adfs_file_t *f, int n, const char *part, progress_t *p)
 {
 	char path[1400], url[600], name[1024];
 	zipent_t *ents;
@@ -461,10 +448,10 @@ static int install_hostfs(const classic_t *c, const adfs_file_t *f, int n, const
 
 	snprintf(p->step, sizeof p->step, "Downloading the support pack...");
 	snprintf(path, sizeof path, "%s/support.zip", part);
-	snprintf(url, sizeof url, MIRROR "support-packs/%s.zip", c->support);
+	snprintf(url, sizeof url, MIRROR "support-packs/%s.zip", support);
 	if (store_fetch(url, path))
 	{
-		snprintf(url, sizeof url, SUPPORT "%s.zip", c->support);
+		snprintf(url, sizeof url, SUPPORT "%s.zip", support);
 		if (store_fetch(url, path))
 			return fail(p, "The support pack didn't arrive. Check the network connection and try again.");
 	}
@@ -606,9 +593,38 @@ static void add_presets(const char *id, adfs_file_t **files, int *n)
 		add_presets_in(dir, "", files, n);
 }
 
+/* presets/<game>.ini: a key=value line for each setting, with # starting a comment line */
+int preset_setting(const char *id, const char *key, char *buf, size_t size)
+{
+	char name[160], path[1024];
+	char *text, *line, *next;
+	size_t klen = strlen(key);
+	int found = 0;
+
+	snprintf(name, sizeof name, "presets/%s.ini", id);
+	if (!store_asset(name, path, sizeof path) || !(text = (char *)file_read(path, NULL)))
+		return 0;
+	for (line = text; line && *line && !found; line = next)
+	{
+		next = strchr(line, '\n');
+		if (next)
+			*next++ = 0;
+		line[strcspn(line, "\r")] = 0;
+		while (*line == ' ' || *line == '\t')
+			line++;
+		if (!strncmp(line, key, klen) && line[klen] == '=')
+		{
+			snprintf(buf, size, "%s", line + klen + 1);
+			found = 1;
+		}
+	}
+	free(text);
+	return found;
+}
+
 int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 {
-	char part[1024], final[1024], path[1100], url[600], error[240];
+	char part[1024], final[1024], path[1100], url[600], error[240], support[40];
 	adfs_file_t *files, *subset;
 	int n, i, k, ndiscs, *disc;
 	uint8_t *zip;
@@ -662,9 +678,10 @@ int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 		return fail(p, "The download isn't a zip of the game.");
 	}
 	add_presets(c->id, &files, &n);
-	if (c->support[0])
+	if (preset_setting(c->id, "support", support, sizeof support) && support[0] &&    /* a support pack: a HostFS folder, not floppies */
+	    strspn(support, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-") == strlen(support))
 	{
-		if (install_hostfs(c, files, n, part, p))
+		if (install_hostfs(c, support, files, n, part, p))
 		{
 			adfs_free(files, n);
 			remove_tree(part);

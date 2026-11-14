@@ -9,4 +9,4 @@ Built from Acorn's sources as RISC OS Open publishes them, under the Apache Lice
 
 Files
 
-toolbox.zip     The nested Window Manager 4.01 for an extension ROM (extrom/), and a !System holding Toolbox 1.47 with its Window, Menu, Iconbar, ProgInfo, SaveAs, Scale and DCS modules and CallASWI, with a !Scrap. Star Fighter 3000 needs it.
+toolbox.zip     The nested Window Manager 4.01 for an extension ROM (extrom/), and a !System holding Toolbox 1.47 with its Window, Menu, Iconbar, ProgInfo, SaveAs, Scale and DCS modules and CallASWI, with a !Scrap and a !Boot holding a Choices folder. Star Fighter 3000 and Puzzle need it.

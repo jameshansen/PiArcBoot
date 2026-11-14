@@ -47,14 +47,14 @@ Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 2
 - All 110 games boot from their first disc to their own screens. Against reference pictures at 35 and 65 seconds, 102 match, 6 get there by 95 seconds (Black Angel, Empire Soccer 94, Powerband, Raw Power, Silver Ball and Thundermonk), and Botkiller 2 and the Risc PC version of Speedball 2 load from their 1.6MB discs
 - The games' disc checks pass, among them Hero Quest's, Fire and Ice's and Blaston's, and what Jet Fighter writes to its boot disc is kept
 - Blank discs format, take files and read back after a fresh power on
-- The 11 Acorn Arcade games and 11 PackMan games in Classics install and start, Star Fighter 3000 among them
+- The 11 Acorn Arcade games and 12 PackMan games in Classics install and start, Star Fighter 3000 and Meteors full screen
 - On the Pi 400 the emulated machine can run about 2.5 times faster than a real one, and Lemmings holds full speed in a game window
 
 ### Not yet
 
 - Games that run inside the RISC OS desktop aren't listed, and joysticks aren't supported
 - Champions installs with 3 of its 5 discs, the ones JASPP's package has
-- DarkWood, which needs a Risc PC, and Phaethon, which needs two drives, aren't in Classics, nor are PackMan games that need more than RISC OS 3.11 has
+- DarkWood, which needs a Risc PC, and Phaethon, which needs two drives, aren't in Classics, nor are the PackMan games that need SharedCLibrary 5, more than 4MB or a screen mode an Archimedes can't show (`presets/README.md` lists them)
 - ArcElite takes 39 seconds to load from its floppy
 
 ## Install
@@ -122,7 +122,7 @@ A Classics game comes as a zip of RISC OS applications, which Install lays out a
 
 A game that needs more than RISC OS 3.11 had, Star Fighter 3000 so far, gets [ROO311's support pack](https://github.com/jameshansen/ROO311#support-pack), mirrored in `distributable-games/support-packs`. Its nested Window Manager goes in an extension ROM with ArcEm's HostFS module, and RISC OS takes both up at power on, the Window Manager in place of the ROM's own, since it can't be replaced once the desktop has started. The game goes in a folder that HostFS shows the machine, with the pack's `!System` of Toolbox modules and its `!Scrap`, which HostLink boots before it runs the game.
 
-A Classics game can also have presets, files that Install adds to the game's own, such as the choices file that starts Star Fighter 3000 full screen where it would otherwise open in a desktop window. They are in `presets/`, a folder for each game laid out as the game's own folder is, and `presets/README.md` describes them.
+What PiArcBoot knows about particular Classics games is in `presets/`, not its code. A game can have files that Install adds to its own, such as the choices file that starts Star Fighter 3000 full screen where it would otherwise open in a desktop window, and settings: the support pack it needs, keys to press once it has started (Escape puts Meteors on the whole screen), or why a PackMan game is left out. `presets/README.md` describes them.
 
 The picture comes from ArcEm's display driver and is scaled by the graphics chip, with pixels repeated to the nearest whole size and only the edges between them blended, so it stays sharp at any window size. Sound is ArcEm's mix of the VIDC's 8 channels at 48 kHz, resampled slightly to keep about 80 ms queued. The launcher and the splash screen use [ROOGUI](https://github.com/jameshansen/ROOGUI), a separate library that draws the RISC OS look from RISC OS Open's sprites and fonts at any display scale.
 

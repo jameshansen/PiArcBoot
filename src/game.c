@@ -495,18 +495,44 @@ static void start_app(void)
 {
 	char text[512];
 
+	static const char *const pack[] = { "!Boot", "!System", "!Scrap" };
+	size_t i;
+
 	app.started = 1;
 	app.clicked = emu_host_clicked;
 	app.missed = emu_host_missed;
-	if (emu_hostfs_dir)             /* the support pack's !System and !Scrap first, as the Filer boots them when it sees them */
+	for (i = 0; emu_hostfs_dir && i < sizeof pack / sizeof *pack; i++)
 	{
-		emu_host_run("Filer_Boot HostFS:$.!System");
-		emu_host_run("Filer_Boot HostFS:$.!Scrap");
+		/* the support pack's applications first, as the Filer boots them when it sees them */
+		snprintf(text, sizeof text, "%s/%s", emu_hostfs_dir, pack[i]);
+		if (!is_dir(text))
+			continue;
+		snprintf(text, sizeof text, "Filer_Boot HostFS:$.%s", pack[i]);
+		emu_host_run(text);
 	}
 	snprintf(text, sizeof text, "Filer_OpenDir %s", app_root());
 	emu_host_run(text);
 	snprintf(text, sizeof text, "Filer_Run %s.%s", app_root(), game.boot);
 	emu_host_run(text);
+}
+
+/* The game is going. The keys its presets name (keys=, by the names test scripts use) are pressed
+   for it now, behind the splash, for a choice the game doesn't keep from one time to the next. */
+static void app_ready(int close)
+{
+	char keys[120], text[600];
+	char *k;
+	size_t used = 0;
+
+	app.ready = 1;
+	if (close)
+		close_root();
+	if (!preset_setting(game.id, "keys", keys, sizeof keys))
+		return;
+	for (k = strtok(keys, " "); k && used + 80 < sizeof text; k = strtok(NULL, " "))
+		used += (size_t)snprintf(text + used, sizeof text - used, "key %s down\nwait 5\nkey %s up\nwait 10\n", k, k);
+	snprintf(text + used, sizeof text - used, "wait 50\n");
+	emu_script(text);
 }
 
 /* Acts on what HostLink has said since the game was started */
@@ -523,8 +549,8 @@ static void app_events(int cs)
 	if (emu_host_modes_at_run >= 0 && (emu_host_modes > emu_host_modes_at_run || emu_host_errors > emu_host_errors_at_run ||
 					   machine_mode_sets > emu_host_vidc_at_run))
 	{
-		app.ready = 1;
 		emu_host_forget();              /* nothing left over to send when it ends */
+		app_ready(0);
 		return;
 	}
 	if (emu_host_tasks_at_run < 0 || emu_host_tasks <= emu_host_tasks_at_run)   /* not yet a task in the desktop */
@@ -532,18 +558,14 @@ static void app_events(int cs)
 	if (emu_host_clicked > app.clicked)
 	{
 		if (game.classic)               /* a desktop game, going; a JASPP game takes the screen or asks for a disc next */
-		{
-			app.ready = 1;
-			close_root();
-		}
+			app_ready(1);
 		return;
 	}
 	if (app.tries == 0 || (emu_host_missed > app.missed && cs >= app.click_at))
 	{
 		if (app.tries == 3)             /* no icon to click: it plays in a window of its own */
 		{
-			app.ready = 1;
-			close_root();
+			app_ready(1);
 			return;
 		}
 		app.missed = emu_host_missed;
@@ -752,7 +774,7 @@ int game_main(const char *id, const char *test_script)
 				{
 					if (script_end < 0)
 						script_end = cs;
-					if (settle < 0 && (game.boot[0] ? app.ready :
+					if (settle < 0 && (game.boot[0] ? app.ready && !emu_script_busy() :
 							   modes_at_read && (machine_mode_sets >= modes_at_read || !machine_motor_on())))
 						settle = cs + 15;
 					if ((settle >= 0 && cs >= settle) || cs > script_end + (game.boot[0] ? 6000 : 3000))
