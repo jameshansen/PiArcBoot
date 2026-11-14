@@ -8,7 +8,7 @@
 
 <p align="center">Discord: <a href="https://discord.gg/88VzuWSYUc">https://discord.gg/88VzuWSYUc</a></p>
 
-![The launcher's JASPP tab, with three games installed and the rest ready to install](docs/launcher.png)
+![The launcher's JASPP tab, with four games installed](docs/launcher.png)
 
 ## Background
 
@@ -38,7 +38,7 @@ PiArcBoot is an unofficial project and isn't affiliated with JASPP or with RISC 
 - **Saves are kept** in a file beside each disc image, and the image itself is never changed. Any disc can be made read only.
 - **Copy protection as the disc has it**, so the games' own disc checks pass.
 
-![Lemmings on a Raspberry Pi 400 with its Game menu open](docs/game.png)
+![Lemmings' first level in a window of its own, under its Game and Switch Floppy menus](docs/game.png)
 
 ## What works
 
@@ -106,7 +106,7 @@ To set an auto switch point, wait for the game to ask for a disc, choose **Set A
 
 Games are kept in `~/.local/share/piarcboot/games`, a folder each, with their disc images, saved changes (`.sav`), icon and settings.
 
-![Settings for a game made from disc images, with its name, how it starts and its icon](docs/mygame.png)
+![The Settings for Gods, with its two discs and the second one set to read only](docs/settings.png)
 
 ## How it works
 
