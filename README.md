@@ -18,13 +18,13 @@ I wanted to add the RISC OS version of Lemmings to that list, along with the oth
 
 PiArcBoot lists 110 of the JASPP games. Install fetches a game from JASPP and Play starts it in a window of its own, with no ROM to find, no emulator to set up and no desktop to click through. Each game boots behind a splash screen on an Archimedes emulated by [ArcEm](https://github.com/ArcEm-emu/ArcEm), and the window shows it once the game has a screen of its own.
 
-The Classics tab has freeware that comes as RISC OS applications rather than disc images, such as Hamsters, Cycloids, Asylum and Oddball (former commercial games their authors and publishers let Acorn Arcade give away), along with the desktop games from PackMan, RISC OS Open's package manager. Install turns each one into floppy images, and it starts straight into play the same way the JASPP games do. Disc images of your own become games too, with an icon made from a sprite on the disc.
+The Classics tab has freeware that comes as RISC OS applications rather than disc images, such as Hamsters, Cycloids, Asylum and Oddball (former commercial games their authors and publishers let Acorn Arcade give away), along with the desktop games from PackMan, RISC OS Open's package manager. Install turns each one into floppy images, and it starts straight into play the same way the JASPP games do. Star Fighter 3000 is too big for a floppy and needs more than RISC OS 3.11 had, so it goes in a folder the machine reads directly, with ROO311's support pack beside it. Disc images of your own become games too, with an icon made from a sprite on the disc.
 
 ## The games
 
 The JASPP tab is JASPP's own package feed, cut down to the games that start the same way on ROO311 as on RISC OS 3.11 and take over the screen, rather than running in the RISC OS desktop. A game JASPP adds later appears by itself once its floppy images are there, marked as untested.
 
-PiArcBoot contains none of the games. Install downloads each game's floppy images from JASPP, which needs an internet connection, and an installed game plays offline. The emulated machine has floppy drives and nothing else, so nothing running in it can reach the files on your computer.
+PiArcBoot contains none of the games. Install downloads each game's floppy images from JASPP, which needs an internet connection, and an installed game plays offline. The emulated machine has floppy drives and nothing else, so nothing running in it can reach the files on your computer, apart from Star Fighter 3000, which sees its own folder and nothing outside it.
 
 PiArcBoot is an unofficial project and isn't affiliated with JASPP or with RISC OS Open Ltd.
 
@@ -47,14 +47,14 @@ Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 2
 - All 110 games boot from their first disc to their own screens. Against reference pictures at 35 and 65 seconds, 102 match, 6 get there by 95 seconds (Black Angel, Empire Soccer 94, Powerband, Raw Power, Silver Ball and Thundermonk), and Botkiller 2 and the Risc PC version of Speedball 2 load from their 1.6MB discs
 - The games' disc checks pass, among them Hero Quest's, Fire and Ice's and Blaston's, and what Jet Fighter writes to its boot disc is kept
 - Blank discs format, take files and read back after a fresh power on
-- The 10 Acorn Arcade games and 11 PackMan games in Classics install and start
+- The 11 Acorn Arcade games and 11 PackMan games in Classics install and start, Star Fighter 3000 among them
 - On the Pi 400 the emulated machine can run about 2.5 times faster than a real one, and Lemmings holds full speed in a game window
 
 ### Not yet
 
 - Games that run inside the RISC OS desktop aren't listed, and joysticks aren't supported
 - Champions installs with 3 of its 5 discs, the ones JASPP's package has
-- DarkWood, which needs a Risc PC, Phaethon, which needs two drives, and Star Fighter 3000 aren't in Classics, nor are PackMan games that need more than RISC OS 3.11 has
+- DarkWood, which needs a Risc PC, and Phaethon, which needs two drives, aren't in Classics, nor are PackMan games that need more than RISC OS 3.11 has
 - ArcElite takes 39 seconds to load from its floppy
 
 ## Install
@@ -108,7 +108,7 @@ Games are kept in `~/.local/share/piarcboot/games`, a folder each, with their di
 
 ## How it works
 
-The machine is [ArcEm](https://github.com/ArcEm-emu/ArcEm)'s, set up as an Archimedes with a 25 MHz ARM3 and 4MB of memory, with floppy drives and nothing else, so nothing running in it can reach the files on your computer. ArcEm's processor, memory controller, IOC, VIDC, sound and keyboard are used as ArcEm has them, in `arcem/`, and PiArcBoot's own code in `src/` adds the floppy drives and connects the picture, sound, keyboard and mouse to the window.
+The machine is [ArcEm](https://github.com/ArcEm-emu/ArcEm)'s, set up as an Archimedes with a 25 MHz ARM3 and 4MB of memory, with floppy drives and nothing else, so nothing running in it can reach the files on your computer. A game with a support pack is the one exception, and sees only its own folder. ArcEm's processor, memory controller, IOC, VIDC, sound and keyboard are used as ArcEm has them, in `arcem/`, and PiArcBoot's own code in `src/` adds the floppy drives and connects the picture, sound, keyboard and mouse to the window.
 
 The machine runs 25 million cycles to a second of its own time, a fixed rate rather than one measured against the host, so a game takes the same machine time on every computer and a test script gives the same result every time. The game window keeps it to real time a centisecond at a time.
 
@@ -118,7 +118,9 @@ The floppy controller is a WD1772 written from its data sheet, with the disc tur
 
 Disc images are never written to. What a game writes goes to `<image>.sav` beside the image and is laid back over it when the game next starts.
 
-A Classics game comes as a zip of RISC OS applications, which Install lays out as ADFS D format floppy images, and it starts on a 640 by 512 desktop in 256 colours for the games that play in it. HostLink can start applications, click icon bar icons and move the pointer, and it reports screen mode changes, error boxes and new desktop tasks, and nothing more. The zips are mirrored in `distributable-games`, each with where it came from and the terms it is distributed under.
+A Classics game comes as a zip of RISC OS applications, which Install lays out as ADFS D format floppy images, and it starts on a 640 by 512 desktop in 256 colours for the games that play in it. HostLink can start applications, click icon bar icons and move the pointer, and it reports screen mode changes, error boxes and new desktop tasks, and nothing more. The zips are mirrored in `distributable-games`, each with where it came from and the terms it is distributed under. Star Fighter 3000 comes from its own site.
+
+A game that needs more than RISC OS 3.11 had, Star Fighter 3000 so far, gets [ROO311's support pack](https://github.com/jameshansen/ROO311#support-pack), mirrored in `distributable-games/support-packs`. Its nested Window Manager goes in an extension ROM with ArcEm's HostFS module, and RISC OS takes both up at power on, the Window Manager in place of the ROM's own, since it can't be replaced once the desktop has started. The game goes in a folder that HostFS shows the machine, with the pack's `!System` of Toolbox modules and its `!Scrap`, which HostLink boots before it runs the game.
 
 The picture comes from ArcEm's display driver and is scaled by the graphics chip, with pixels repeated to the nearest whole size and only the edges between them blended, so it stays sharp at any window size. Sound is ArcEm's mix of the VIDC's 8 channels at 48 kHz, resampled slightly to keep about 80 ms queued. The launcher and the splash screen use [ROOGUI](https://github.com/jameshansen/ROOGUI), a separate library that draws the RISC OS look from RISC OS Open's sprites and fonts at any display scale.
 
@@ -184,7 +186,7 @@ PiArcBoot was built using [Claude Code](https://claude.com/claude-code) with Cla
 
 The games are released by [JASPP](https://www.jaspp.org.uk), which also defined the JFD disc image format. Each game remains the work of its authors and publisher, named beside it in the list.
 
-The Classics are freeware thanks to their authors and rights holders and to [Acorn Arcade](http://www.acornarcade.com/articles/Free_games/index879.html), which obtained the permission to distribute them, and to the authors of the games in [RISC OS Open's package sources](https://packages.riscosopen.org/).
+The Classics are freeware thanks to their authors and rights holders and to [Acorn Arcade](http://www.acornarcade.com/articles/Free_games/index879.html), which obtained the permission to distribute them, to Christopher Bazley, who maintains [Star Fighter 3000](http://starfighter.acornarcade.com) and gives its latest release away, and to the authors of the games in [RISC OS Open's package sources](https://packages.riscosopen.org/).
 
 The machine is [ArcEm](https://github.com/ArcEm-emu/ArcEm), the Acorn Archimedes emulator by David Alan Gilbert, Peter Naulls, Peter Howkins, Matthew Howkins, Jeffrey Lee, Daniel Clarke, Cameron Cawley and its other contributors, whose processor began as the ARMulator of Advanced RISC Machines Ltd.
 
@@ -196,6 +198,6 @@ PiArcBoot's icon is the Archimedes badge, its triangular A in red and yellow on 
 
 ## Licence
 
-PiArcBoot is free software under the GNU General Public License v3.0, in [LICENSE](LICENSE). The floppy disc controllers and the disc image code (`src/wd1772.c`, `src/82c711.c`, `src/disc.c` and `src/disc.h`) are under the GNU General Public License, version 2 or any later version, as each of those files says, with version 2's text in `arcem/COPYING`. ArcEm's files in `arcem/` keep their own notices: ArcEm is under the GNU General Public License, version 2 or any later version, and is used here under version 3. `arcem/COPYING` is the licence ArcEm ships.
+PiArcBoot is free software under the GNU General Public License v3.0, in [LICENSE](LICENSE). The floppy disc controllers and the disc image code (`src/wd1772.c`, `src/82c711.c`, `src/disc.c` and `src/disc.h`) are under the GNU General Public License, version 2 or any later version, as each of those files says, with version 2's text in `arcem/COPYING`. ArcEm's files in `arcem/` keep their own notices: ArcEm is under the GNU General Public License, version 2 or any later version, and is used here under version 3. `arcem/COPYING` is the licence ArcEm ships. `src/hostfsmod.h` holds ArcEm's HostFS module, assembled from `arcem/support_modules/hostfs/hostfs.s`.
 
-`ROM311` is ROO311, under the Apache License, version 2.0. It is a separate work that the program loads, and its source is in the ROO311 repository. The icons in `icons/` are made from each game's own sprite and remain the copyright of the games' publishers. ROOGUI is a separate library under the Apache License, version 2.0, as are the RISC OS Open sprites and font outlines it carries. It ships beside the program as `libroogui.so`, or `roogui.dll` on Windows, with its licence in `LICENSE-ROOGUI`.
+`ROM311` is ROO311, under the Apache License, version 2.0. It is a separate work that the program loads, and its source is in the ROO311 repository, as is that of its support pack, which Install downloads for the games that need it. The icons in `icons/` are made from each game's own sprite and remain the copyright of the games' publishers. ROOGUI is a separate library under the Apache License, version 2.0, as are the RISC OS Open sprites and font outlines it carries. It ships beside the program as `libroogui.so`, or `roogui.dll` on Windows, with its licence in `LICENSE-ROOGUI`.

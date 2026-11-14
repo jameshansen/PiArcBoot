@@ -1,0 +1,12 @@
+ROO311's support packs
+
+Source: https://github.com/jameshansen/ROO311, built by its release workflow and published with each release
+Kept here as PiArcBoot's copy for installing the games that need one.
+
+Terms
+
+Built from Acorn's sources as RISC OS Open publishes them, under the Apache License, version 2.0, as is ROO311. The sources and the commit each came from are in ROO311's repository, under Support/.
+
+Files
+
+toolbox.zip     The nested Window Manager 4.01 for an extension ROM (extrom/), and a !System holding Toolbox 1.47 with its Window, Menu, Iconbar, ProgInfo, SaveAs, Scale and DCS modules and CallASWI, with a !Scrap. Star Fighter 3000 needs it.

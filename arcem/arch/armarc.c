@@ -191,7 +191,7 @@ ARMul_MemoryInit(ARMul_State *state)
   unsigned int i;
   uint32_t extnrom_size = 0;
 #if defined(EXTNROM_SUPPORT)
-  uint32_t extnrom_entry_count;
+  uint32_t extnrom_entry_count = 0;
 #endif
   uint32_t initmemsize = 0;
   
@@ -284,8 +284,9 @@ ARMul_MemoryInit(ARMul_State *state)
   fseek(ROMFile, 0l, SEEK_SET);
 
 #if defined(EXTNROM_SUPPORT)
-  /* Add the space required by an Extension Rom */
-  extnrom_size = (extnrom_calculate_size(CONFIG.sEXTNDirectory, &extnrom_entry_count)+4095)&~4095;
+  /* Add the space required by an Extension Rom, if there is a folder of modules for one */
+  if (CONFIG.sEXTNDirectory && CONFIG.sEXTNDirectory[0])
+    extnrom_size = (extnrom_calculate_size(CONFIG.sEXTNDirectory, &extnrom_entry_count)+4095)&~4095;
   warn("extnrom_size = %"PRIu32", extnrom_entry_count= %"PRIu32"\n",
        extnrom_size, extnrom_entry_count);
 #endif /* EXTNROM_SUPPORT */

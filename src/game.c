@@ -476,6 +476,21 @@ static struct
 	int run_at, started, ready, clicked, missed, tries, click_at;
 } app = { -1 };
 
+/* Where the game's application is: the floppy in drive 0, or the HostFS folder of a game with a
+   support pack */
+static const char *app_root(void)
+{
+	return emu_hostfs_dir ? "HostFS:$" : "adfs::0.$";
+}
+
+static void close_root(void)
+{
+	char text[64];
+
+	snprintf(text, sizeof text, "Filer_CloseDir %s", app_root());
+	emu_host_run(text);
+}
+
 static void start_app(void)
 {
 	char text[512];
@@ -483,8 +498,14 @@ static void start_app(void)
 	app.started = 1;
 	app.clicked = emu_host_clicked;
 	app.missed = emu_host_missed;
-	emu_host_run("Filer_OpenDir adfs::0.$");
-	snprintf(text, sizeof text, "Filer_Run adfs::0.$.%s", game.boot);
+	if (emu_hostfs_dir)             /* the support pack's !System and !Scrap first, as the Filer boots them when it sees them */
+	{
+		emu_host_run("Filer_Boot HostFS:$.!System");
+		emu_host_run("Filer_Boot HostFS:$.!Scrap");
+	}
+	snprintf(text, sizeof text, "Filer_OpenDir %s", app_root());
+	emu_host_run(text);
+	snprintf(text, sizeof text, "Filer_Run %s.%s", app_root(), game.boot);
 	emu_host_run(text);
 }
 
@@ -513,7 +534,7 @@ static void app_events(int cs)
 		if (game.classic)               /* a desktop game, going; a JASPP game takes the screen or asks for a disc next */
 		{
 			app.ready = 1;
-			emu_host_run("Filer_CloseDir adfs::0.$");
+			close_root();
 		}
 		return;
 	}
@@ -522,7 +543,7 @@ static void app_events(int cs)
 		if (app.tries == 3)             /* no icon to click: it plays in a window of its own */
 		{
 			app.ready = 1;
-			emu_host_run("Filer_CloseDir adfs::0.$");
+			close_root();
 			return;
 		}
 		app.missed = emu_host_missed;
@@ -545,7 +566,7 @@ static int boot_script(void)
 
 int game_main(const char *id, const char *test_script)
 {
-	char path[1024], cls[160], rom[1024];
+	char path[1024], cls[160], rom[1024], extrom[1024], hostfs[1024];
 	uint8_t icon[128 * 128 * 4], cmos[256];
 	int booting = 1, script_cs, cs = 0, script_end = -1, settle = -1, modes_at_read = 0, last_check = 0, w, h, quit = 0, i;
 	int run_for = getenv("PIARCBOOT_RUN_FOR") ? atoi(getenv("PIARCBOOT_RUN_FOR")) : 0, lost = 0, shown_cs = 0;
@@ -554,7 +575,8 @@ int game_main(const char *id, const char *test_script)
 	Uint64 freq, start, began, shown = 0;
 	size_t n;
 
-	if (store_load(id, &game) || !game.ndiscs)
+	store_game_path(id, "hostfs", hostfs, sizeof hostfs);
+	if (store_load(id, &game) || (!game.ndiscs && !is_dir(hostfs)))         /* discs, or a HostFS folder */
 	{
 		fprintf(stderr, "piarcboot: no game called %s is installed\n", id);
 		return 1;
@@ -591,6 +613,11 @@ int game_main(const char *id, const char *test_script)
 	memcpy(cmos, default_cmos, sizeof cmos);
 	if (game.classic)               /* a 640 by 512 desktop in 256 colours, mode 21 on a multisync monitor, for the games that play in it */
 		machine_cmos_desktop(cmos, 21, 1);
+	/* A game with a support pack has modules in an extension ROM, which RISC OS takes up at power on
+	   in place of older ones of the same name, and a folder of the computer's own as HostFS */
+	store_game_path(game.id, "extrom", extrom, sizeof extrom);
+	emu_extrom_dir = is_dir(extrom) ? extrom : NULL;
+	emu_hostfs_dir = is_dir(hostfs) ? hostfs : NULL;
 	if (emu_start(rom, cmos, game.fdc))
 	{
 		fprintf(stderr, "piarcboot: the ROM image %s can't be read\n", rom);
@@ -600,8 +627,11 @@ int game_main(const char *id, const char *test_script)
 		emu_audio_open();
 	else
 		rg_test_load(test_script);
-	store_game_path(game.id, game.disc[0], path, sizeof path);
-	machine_disc(0, path, game.ro[0]);
+	if (game.ndiscs)
+	{
+		store_game_path(game.id, game.disc[0], path, sizeof path);
+		machine_disc(0, path, game.ro[0]);
+	}
 	swaps_load();
 	script_cs = boot_script();
 	emu_mute = 1;

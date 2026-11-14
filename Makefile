@@ -17,10 +17,10 @@ ROOGUI ?= $(firstword $(wildcard roogui ../ROOGUI))
 # The machine is ArcEm's, in arcem/ as ArcEm has its files. armemudec.c and armemuinstr.c are
 # part of armemu.c, arch/fastmap.c is part of the files that use arch/fastmap.h, and
 # arch/stddisplaydev.c is part of src/screen.c.
-ARCEM := arcem/armcopro.c arcem/armemu.c arcem/arminit.c arcem/armsupp.c arcem/eventq.c \
-	arcem/arch/archio.c arcem/arch/armarc.c arcem/arch/cp15.c arcem/arch/displaydev.c \
-	arcem/arch/filecommon.c arcem/arch/i2c.c arcem/arch/keyboard.c arcem/arch/newsound.c
-ARCEM_DEFS := -DSOUND_SUPPORT
+ARCEM := arcem/armcopro.c arcem/armemu.c arcem/arminit.c arcem/armsupp.c arcem/eventq.c arcem/hostfs.c \
+	arcem/arch/archio.c arcem/arch/armarc.c arcem/arch/cp15.c arcem/arch/displaydev.c arcem/arch/extnrom.c \
+	arcem/arch/filecommon.c arcem/arch/fileunix.c arcem/arch/i2c.c arcem/arch/keyboard.c arcem/arch/newsound.c
+ARCEM_DEFS := -DSOUND_SUPPORT -DHOSTFS_SUPPORT -DEXTNROM_SUPPORT
 ARCEM_H := $(wildcard arcem/*.h arcem/arch/*.h) arcem/armemudec.c arcem/armemuinstr.c arcem/arch/fastmap.c \
 	arcem/arch/stddisplaydev.c
 SRC := $(wildcard src/*.c)
@@ -40,6 +40,9 @@ build/libroogui.so: $(wildcard $(ROOGUI)/src/*.c $(ROOGUI)/src/*.h)
 build/arcem/%.o: arcem/%.c $(ARCEM_H)
 	@mkdir -p $(dir $@)
 	$(CC) $(ARCEM_OPT) -std=gnu17 -Wall -W -Wno-unused-parameter $(ARCEM_DEFS) -c $< -o $@
+
+# HostFS reads and writes the computer's files with glibc's 64-bit file calls
+build/arcem/hostfs.o: ARCEM_DEFS += -D_LARGEFILE64_SOURCE
 
 # The picture's code is ArcEm's display driver, as fast as the machine
 build/src/screen.o: OPT := $(ARCEM_OPT)

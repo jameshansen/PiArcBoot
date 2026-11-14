@@ -660,6 +660,13 @@ FILE *File_OpenAppData(const char *sName, const char *sMode)
 	return NULL;
 }
 
+/* The extension ROM's modules come only from the folder emu_extrom_dir names */
+Directory *Directory_OpenAppDir(const char *sName)
+{
+	UNUSED_VAR(sName);
+	return NULL;
+}
+
 /* An A3000 has no hard disc controller: its addresses read as nothing is there */
 void HDC_Init(ARMul_State *state)
 {
@@ -801,6 +808,8 @@ static bool hostlink_swi(ARMul_State *state, unsigned number)
 
 /* ---- Power on, and a centisecond at a time ---- */
 
+const char *emu_extrom_dir, *emu_hostfs_dir;
+
 int emu_start(const char *rom, const uint8_t *cmos_in, int fdc)
 {
 	ARMul_State *state;
@@ -821,7 +830,8 @@ int emu_start(const char *rom, const uint8_t *cmos_in, int fdc)
 	config.eMemSize = MemSize_4M;
 	config.eProcessor = Processor_ARM3;
 	config.sRomImageName = strdup(rom);
-	config.bAspectRatioCorrection = true;
+	config.sEXTNDirectory = strdup(emu_extrom_dir ? emu_extrom_dir : "");
+	config.sHostFSDirectory = strdup(emu_hostfs_dir ? emu_hostfs_dir : "");	config.bAspectRatioCorrection = true;
 	config.bUpscale = true;
 	ARMul_FixedEmuRate = ARMul_EmuRate = MACHINE_HZ;
 	ARMul_HostSWI = hostlink_swi;

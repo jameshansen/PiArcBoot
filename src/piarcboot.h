@@ -19,6 +19,8 @@ extern unsigned emu_frames;     /* pictures delivered so far */
 extern int emu_mute;
 extern uint8_t emu_host_keys[512];      /* keys held on the real keyboard, by SDL scancode */
 
+extern const char *emu_extrom_dir;     /* a folder of modules for an extension ROM, read at power on */
+extern const char *emu_hostfs_dir;     /* the folder HostFS shows the machine */
 int emu_start(const char *rom, const uint8_t *cmos, int fdc);
 void emu_step(void);
 void emu_audio_open(void);
@@ -91,6 +93,7 @@ uint8_t *zip_get(const uint8_t *z, size_t len, const zipent_t *e, size_t *n);
 int run_command(const char *fmt, ...);
 char *run_output(const char *fmt, ...);
 int make_dirs(const char *path);
+int is_dir(const char *path);
 void remove_tree(const char *path);
 const char *base_name(const char *path);
 
@@ -187,6 +190,7 @@ typedef struct
 	char prefix[128];       /* the folder in the zip that holds what goes on the disc */
 	char boot[40];          /* the application that starts the game */
 	int section;
+	char support[32];       /* the support pack it needs, from ROO311, or "": it then goes in a HostFS folder, not on floppies */
 } classic_t;
 
 int classic_count(void);

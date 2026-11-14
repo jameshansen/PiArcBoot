@@ -438,16 +438,26 @@ int store_sprites(const game_t *g, sprite_t **out)
 	sprite_t *all = NULL;
 	int total = 0, i, j;
 
-	for (i = 0; i < g->ndiscs; i++)
+	/* a game in a HostFS folder has no discs, and its application's sprite file is in the folder */
+	for (i = g->ndiscs ? 0 : -1; i < g->ndiscs; i++)
 	{
-		char path[1024];
+		char path[1024], file[200];
 		sprite_t *list;
 		uint8_t *img;
 		size_t len;
 		int n;
 
-		store_game_path(g->id, g->disc[i], path, sizeof path);
-		img = image_sectors(path, &len);
+		if (i < 0)
+		{
+			snprintf(file, sizeof file, "hostfs/%s/!Sprites,ff9", g->boot);
+			store_game_path(g->id, file, path, sizeof path);
+			img = file_read(path, &len);
+		}
+		else
+		{
+			store_game_path(g->id, g->disc[i], path, sizeof path);
+			img = image_sectors(path, &len);
+		}
 		if (!img)
 			continue;
 		n = sprites_scan(img, len, &list);

@@ -23,7 +23,9 @@
 #include "default_cmos.h"
 
 /* Runs a script against the machine with no window. The clock is fixed, so a run repeats exactly.
-   The CMOS RAM starts as it does for a game, or as all zeros with "blank" after the fdc number. */
+   The CMOS RAM starts as it does for a game, or as all zeros with "blank" after the fdc number.
+   PIARCBOOT_EXTROM and PIARCBOOT_HOSTFS name an extension ROM's folder of modules and HostFS's
+   folder, as a game's support pack gives them. */
 static int cmd_test(int argc, char **argv)
 {
 	char *text, state[160];
@@ -31,6 +33,8 @@ static int cmd_test(int argc, char **argv)
 	if (argc < 2)
 		return 2;
 	machine_fixed_time = 1;
+	emu_extrom_dir = getenv("PIARCBOOT_EXTROM");
+	emu_hostfs_dir = getenv("PIARCBOOT_HOSTFS");
 	if (emu_start(argv[0], argc > 3 && !strcmp(argv[3], "blank") ? NULL : default_cmos, argc > 2 ? atoi(argv[2]) : 0))
 	{
 		fprintf(stderr, "can't read the ROM %s\n", argv[0]);

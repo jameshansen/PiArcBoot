@@ -181,6 +181,13 @@ int make_dirs(const char *path)
 	return stat(path, &st) || !S_ISDIR(st.st_mode) ? -1 : 0;
 }
 
+int is_dir(const char *path)
+{
+	struct stat st;
+
+	return !stat(path, &st) && S_ISDIR(st.st_mode);
+}
+
 /* A file, or a folder with everything in it */
 void remove_tree(const char *path)
 {

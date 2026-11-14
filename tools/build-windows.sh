@@ -26,8 +26,8 @@ mkdir -p "$OUT" "$OBJ"
 objs=
 sh "$GUI/tools/build-windows.sh" "$SDL" "$ZLIB" >/dev/null
 # The machine is ArcEm's, in arcem/; the files not listed here are parts of those that are
-ARCEM="armcopro.c armemu.c arminit.c armsupp.c eventq.c arch/archio.c arch/armarc.c arch/cp15.c
-  arch/displaydev.c arch/filecommon.c arch/i2c.c arch/keyboard.c arch/newsound.c"
+ARCEM="armcopro.c armemu.c arminit.c armsupp.c eventq.c hostfs.c arch/archio.c arch/armarc.c arch/cp15.c
+  arch/displaydev.c arch/extnrom.c arch/filecommon.c arch/filewin.c arch/i2c.c arch/keyboard.c arch/newsound.c"
 newest=$(find "$HERE/src" "$HERE/arcem" "$GUI/src" \( -name '*.h' -o -name 'armemu*.c' -o -name 'fastmap.c' -o -name 'stddisplaydev.c' \) -print0 | xargs -0 ls -t | head -1)
 for f in $(for a in $ARCEM; do echo "arcem/$a"; done) $(cd "$HERE" && ls src/*.c); do
   o="$OBJ/$(basename "$f" .c).o"
@@ -40,7 +40,7 @@ for f in $(for a in $ARCEM; do echo "arcem/$a"; done) $(cd "$HERE" && ls src/*.c
     *) warn="-Wall -Wno-format-truncation" ;;
   esac
   if [ ! -f "$o" ] || [ "$HERE/$f" -nt "$o" ] || [ "$newest" -nt "$o" ]; then
-    zig cc -target x86_64-windows-gnu -std=gnu17 $opt $warn -DSOUND_SUPPORT -DROOGUI_DLL ${VERSION:+"-DPIARCBOOT_VERSION=\"$VERSION\""} -I"$HERE/src" -I"$GUI/src" \
+    zig cc -target x86_64-windows-gnu -std=gnu17 $opt $warn -DSOUND_SUPPORT -DHOSTFS_SUPPORT -DEXTNROM_SUPPORT -DROOGUI_DLL ${VERSION:+"-DPIARCBOOT_VERSION=\"$VERSION\""} -I"$HERE/src" -I"$GUI/src" \
       -I"$SDL/include/SDL2" -I"$ZLIB" -c "$HERE/$f" -o "$o"
   fi
   objs="$objs $(basename "$o")"

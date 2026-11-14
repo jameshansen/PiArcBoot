@@ -13,10 +13,12 @@
 #include <unistd.h>
 #include <zlib.h>
 #include "piarcboot.h"
+#include "hostfsmod.h"
 
 #define MIRROR "https://raw.githubusercontent.com/jameshansen/PiArcBoot/main/distributable-games/"
 #define ARCADE "http://www.acornarcade.com/downloads/"
 #define ASYLUM "http://asylum.acornarcade.com/files/"
+#define SUPPORT "https://github.com/jameshansen/ROO311/releases/latest/download/"   /* where ROO311 publishes its support packs */
 #define DISC_ROOM (800 * 1024 - 0xC00)  /* an 800K disc less its map and root directory */
 #define BIG_ROOM (DISC_ROOM + 4 * 10240) /* and with the 4 tracks more an object too big for that may have */
 #define MAX_PACKMAN 200
@@ -36,6 +38,10 @@ static const classic_t arcade[] = {
 	{ "Ixion", "Ixion", "1992, Tom Cooper and Barry Clarkson, Software 42", "acornarcade/ixion.zip", ARCADE "ixion.zip", "Ixion/", "!Ixion", CLASSIC_ARCADE },
 	{ "Oddball", "Oddball", "1995, Andy Southgate", "asylum.acornarcade/oddball.zip", ASYLUM "oddball.zip", "OddballFD/", "!OddBall", CLASSIC_ARCADE },
 	{ "Revolver", "Revolver", "Psycore, from PomPom Games", "acornarcade/revolver.zip", ARCADE "revolver.zip", "", "!revolver", CLASSIC_ARCADE },
+	/* release 3.21, free from its own site, which is where it comes from. It wants the nested Window
+	   Manager and the Toolbox, from ROO311's support pack, and is too big for an 800K floppy. */
+	{ "Star-Fighter-3000", "Star Fighter 3000", "1994, Fednet Software, release 3.21 by Christopher Bazley", "",
+	  "http://starfighter.acornarcade.com/download/sf3000.zip", "", "!Star3000", CLASSIC_ARCADE, "toolbox" },
 	{ "Terramex", "Terramex", "1987, Shaun Hollingworth and Pete Harrap, Krisalis Software", "acornarcade/terra.zip",
 	  ARCADE "terra.zip", "", "!Terramex", CLASSIC_ARCADE },
 };
@@ -382,6 +388,126 @@ static int pack(adfs_file_t *f, int n, const char *boot, int *disc)
 	return ndiscs;
 }
 
+/* A RISC OS path as HostFS names it on the computer: the folders' . and the name's own / change
+   places, and a file's type follows a comma, or its load and execution addresses for one with no
+   type. 1 for a name that would leave the folder (a part that comes out as . or ..). */
+static int host_name(const adfs_file_t *f, char *out, size_t size)
+{
+	size_t i, k = 0, part = 0;
+
+	for (i = 0; f->path[i] && k + 1 < size; i++)
+	{
+		char ch = f->path[i] == '.' ? '/' : f->path[i] == '/' ? '.' : f->path[i] == '\\' ? '_' : f->path[i];
+
+		out[k++] = ch;
+		if (ch == '/' || !f->path[i + 1])
+		{
+			size_t end = ch == '/' ? k - 1 : k;
+
+			if ((end - part == 1 && out[part] == '.') || (end - part == 2 && out[part] == '.' && out[part + 1] == '.'))
+				return 1;
+			part = k;
+		}
+	}
+	out[k] = 0;
+	if (f->dir || !k)
+		return !k;
+	if ((f->load & 0xFFF00000u) != 0xFFF00000u)
+		snprintf(out + k, size - k, ",%x-%x", (unsigned)f->load, (unsigned)f->exec);
+	else if (((f->load >> 8) & 0xFFF) != 0xFFF)
+		snprintf(out + k, size - k, ",%03x", (unsigned)(f->load >> 8) & 0xFFF);
+	return 0;
+}
+
+/* Writes a file, making the folders it goes in */
+static int put_file(const char *path, const void *data, size_t len)
+{
+	char dir[1400];
+	char *slash;
+
+	snprintf(dir, sizeof dir, "%s", path);
+	slash = strrchr(dir, '/');
+	if (slash)
+	{
+		*slash = 0;
+		if (make_dirs(dir))
+			return 1;
+	}
+	return file_write(path, data, len);
+}
+
+/* A game that needs a support pack goes in a folder HostFS shows the machine, hostfs/, with the
+   pack's !System and !Scrap beside it. The pack's extrom/ folder, and HostFS itself, make the
+   extension ROM the machine starts with, extrom/. */
+static int install_hostfs(const classic_t *c, const adfs_file_t *f, int n, const char *part, progress_t *p)
+{
+	char path[1400], url[600], name[1024];
+	zipent_t *ents;
+	uint8_t *zip;
+	size_t len;
+	int i, m;
+
+	snprintf(p->step, sizeof p->step, "Putting %s in its folder...", c->title);
+	for (i = 0; i < n; i++)
+	{
+		if (host_name(&f[i], name, sizeof name))
+			continue;
+		snprintf(path, sizeof path, "%s/hostfs/%s", part, name);
+		if (f[i].dir ? make_dirs(path) : put_file(path, f[i].data, f[i].len))
+			return fail(p, "The game's files can't be saved.");
+	}
+
+	snprintf(p->step, sizeof p->step, "Downloading the support pack...");
+	snprintf(path, sizeof path, "%s/support.zip", part);
+	snprintf(url, sizeof url, MIRROR "support-packs/%s.zip", c->support);
+	if (store_fetch(url, path))
+	{
+		snprintf(url, sizeof url, SUPPORT "%s.zip", c->support);
+		if (store_fetch(url, path))
+			return fail(p, "The support pack didn't arrive. Check the network connection and try again.");
+	}
+	zip = file_read(path, &len);
+	unlink(path);
+	/* its names are HostFS's already, types after a comma */
+	m = zip ? zip_list(zip, len, &ents) : 0;
+	for (i = 0; i < m; i++)
+	{
+		const char *e = ents[i].name;
+		size_t elen = strlen(e);
+		uint8_t *data;
+
+		if (e[0] == '/' || strstr(e, "..") || strchr(e, '\\'))
+			continue;
+		if (!strncmp(e, "extrom/", 7))
+			snprintf(path, sizeof path, "%s/extrom/%s", part, e + 7);
+		else
+			snprintf(path, sizeof path, "%s/hostfs/%s", part, e);
+		if (elen && e[elen - 1] == '/')
+		{
+			make_dirs(path);
+			continue;
+		}
+		data = zip_get(zip, len, &ents[i], &elen);
+		if (!data || put_file(path, data, elen))
+		{
+			free(data);
+			free(ents);
+			free(zip);
+			return fail(p, "The support pack can't be saved.");
+		}
+		free(data);
+	}
+	if (m > 0)
+		free(ents);
+	free(zip);
+	if (m <= 0)
+		return fail(p, "The support pack isn't a zip.");
+	snprintf(path, sizeof path, "%s/extrom/HostFS,ffa", part);
+	if (put_file(path, hostfs_module, sizeof hostfs_module))
+		return fail(p, "The game's files can't be saved.");
+	return 0;
+}
+
 int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 {
 	char part[1024], final[1024], path[1100], url[600], error[240];
@@ -437,6 +563,17 @@ int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 		remove_tree(part);
 		return fail(p, "The download isn't a zip of the game.");
 	}
+	if (c->support[0])
+	{
+		if (install_hostfs(c, files, n, part, p))
+		{
+			adfs_free(files, n);
+			remove_tree(part);
+			return -1;
+		}
+		adfs_free(files, n);
+		goto made;
+	}
 
 	snprintf(p->step, sizeof p->step, "Making %s's discs...", c->title);
 	disc = malloc(n * sizeof *disc);
@@ -478,6 +615,7 @@ int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 	free(subset);
 	adfs_free(files, n);
 
+made:
 	snprintf(g.title, sizeof g.title, "%s", c->title);
 	snprintf(g.info, sizeof g.info, "%s", c->info);
 	snprintf(g.boot, sizeof g.boot, "%s", c->boot);
