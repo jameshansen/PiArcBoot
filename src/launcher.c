@@ -645,8 +645,8 @@ static int draw_list(int vx, int vy, int vw, int vh)
 			free(files);
 		}
 		y += BTN_H + 12;
-		rg_text_centre(SMALL, vx, y, vw, 14, rg_colour(6), any ? "Disc images can also be dropped onto this window." :
-			       "Add a game from its disc images (JFD, ADF, ADL or HFE), or drop them onto this window.");
+		rg_text_centre(SMALL, vx, y, vw, 14, rg_colour(6), any ? "Disc images and archives can also be dropped onto this window." :
+			       "Add a game from its disc images (JFD, ADF, ADL or HFE) or an archive of its applications (zip, Spark or ArcFS).");
 		y += 20;
 	}
 	rg_unclip();

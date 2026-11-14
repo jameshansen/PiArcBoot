@@ -18,7 +18,7 @@ I wanted to add the RISC OS version of Lemmings to that list, along with the oth
 
 PiArcBoot lists 110 of the JASPP games. Install fetches a game from JASPP and Play starts it in a window of its own, with no ROM to find, no emulator to set up and no desktop to click through. Each game boots behind a splash screen on an Archimedes emulated by [ArcEm](https://github.com/ArcEm-emu/ArcEm), and the window shows it once the game has a screen of its own.
 
-The Classics tab has freeware that comes as RISC OS applications rather than disc images, such as Hamsters, Cycloids, Asylum and Oddball (former commercial games their authors and publishers let Acorn Arcade give away), along with the desktop games from PackMan, RISC OS Open's package manager. Install turns each one into floppy images, and it starts straight into play the same way the JASPP games do. Star Fighter 3000 is too big for a floppy and needs more than RISC OS 3.11 had, so it goes in a folder the machine reads directly, with ROO311's support pack beside it. Disc images of your own become games too, with an icon made from a sprite on the disc.
+The Classics tab has freeware that comes as RISC OS applications rather than disc images, such as Hamsters, Cycloids, Asylum and Oddball (former commercial games their authors and publishers let Acorn Arcade give away), along with the desktop games from PackMan, RISC OS Open's package manager. Install turns each one into floppy images, and it starts straight into play the same way the JASPP games do. Star Fighter 3000 is too big for a floppy and needs more than RISC OS 3.11 had, so it goes in a folder the machine reads directly, with ROO311's support pack beside it. Disc images of your own become games too, and so do archives of RISC OS applications, with an icon made from a sprite inside.
 
 ## The games
 
@@ -35,6 +35,7 @@ PiArcBoot is an unofficial project and isn't affiliated with JASPP or with RISC 
 - **Any window size, and full screen**, with the picture kept sharp at every size.
 - **Disc switching** from the Switch Floppy menu or with Alt and a number, and auto switch points, which change the disc by themselves when a game shows the screen that asks for it.
 - **Your own disc images.** Add Game on the My Games tab turns JFD, ADF, ADL and HFE images, the usual Archimedes disc image formats, or a zip of them, into games, with the discs put in order from their names.
+- **Your own archives.** A zip, Spark or ArcFS archive of RISC OS applications becomes a game too: its files go on floppy images, or in a folder the machine reads directly when they're too big for floppies or need the support pack, and it starts from the application named after the archive, or its biggest.
 - **Saves are kept** in a file beside each disc image, and the image itself is never changed. Any disc can be made read only.
 - **Copy protection as the disc has it**, so the games' own disc checks pass.
 
@@ -120,6 +121,8 @@ Disc images are never written to. What a game writes goes to `<image>.sav` besid
 
 A Classics game comes as a zip of RISC OS applications, which Install lays out as ADFS D format floppy images, and it starts on a 640 by 512 desktop in 256 colours for the games that play in it. HostLink can start applications, click icon bar icons and move the pointer, and it reports screen mode changes, error boxes and new desktop tasks, and nothing more. The zips are mirrored in `distributable-games`, each with where it came from and the terms it is distributed under. Star Fighter 3000 comes from its own site.
 
+An archive added with Add Game is laid out the same way. Spark and ArcFS archives, RISC OS's own formats, are read by `src/arc.c`: stored, packed (runs of a byte), crunched and compressed (LZW, as Unix compress wrote it) and squashed files, each checked against its CRC. The folder an archive's applications are in becomes the top of the disc, so a PackMan package's `Apps.Games.!Foo` comes out as `!Foo`, and an application whose `!Run` asks for the Toolbox, `System:`, a scrap folder or `Choices:` gets the support pack.
+
 A game that needs more than RISC OS 3.11 had, Star Fighter 3000 so far, gets [ROO311's support pack](https://github.com/jameshansen/ROO311#support-pack), mirrored in `distributable-games/support-packs`. Its nested Window Manager goes in an extension ROM with ArcEm's HostFS module, and RISC OS takes both up at power on, the Window Manager in place of the ROM's own, since it can't be replaced once the desktop has started. The game goes in a folder that HostFS shows the machine, with the pack's `!System` of Toolbox modules and its `!Scrap`, which HostLink boots before it runs the game.
 
 What PiArcBoot knows about particular Classics games is in `presets/`, not its code. A game can have files that Install adds to its own, such as the choices file that starts Star Fighter 3000 full screen where it would otherwise open in a desktop window, and settings: the support pack it needs, keys to press once it has started (Escape puts Meteors on the whole screen), or why a PackMan game is left out. `presets/README.md` describes them.
@@ -142,7 +145,7 @@ make
 make check
 ```
 
-`make check` runs the self-tests of the disc image code, the ADFS disc maker, the icons, PNG and the game table (the list of JASPP games in `src/catalog.h`) in a few seconds, with no games needed. The About tab shows the version, which `make VERSION=1.2.3` sets and which is otherwise git's name for the commit.
+`make check` runs the self-tests of the disc image code, the ADFS disc maker, the Spark and ArcFS readers, the icons, PNG and the game table (the list of JASPP games in `src/catalog.h`) in a few seconds, with no games needed. The About tab shows the version, which `make VERSION=1.2.3` sets and which is otherwise git's name for the commit.
 
 The Windows build runs on Windows from Git Bash, or on Linux, with [zig](https://ziglang.org) 0.16, and the script's opening comment says where SDL2 and zlib come from.
 

@@ -425,10 +425,11 @@ static int put_file(const char *path, const void *data, size_t len)
 	return file_write(path, data, len);
 }
 
-/* A game that needs a support pack goes in a folder HostFS shows the machine, hostfs/, with the
-   pack's !System and !Scrap beside it. The pack's extrom/ folder, and HostFS itself, make the
-   extension ROM the machine starts with, extrom/. */
-static int install_hostfs(const classic_t *c, const char *support, const adfs_file_t *f, int n, const char *part, progress_t *p)
+/* A game that needs a support pack, or has something in it too big for a floppy, goes in a folder
+   HostFS shows the machine, hostfs/, with the pack's !Boot, !System and !Scrap beside it. The
+   pack's extrom/ folder, and HostFS itself, make the extension ROM the machine starts with,
+   extrom/. support is "" for no pack. */
+static int install_hostfs(const char *title, const char *support, const adfs_file_t *f, int n, const char *part, progress_t *p)
 {
 	char path[1400], url[600], name[1024];
 	zipent_t *ents;
@@ -436,7 +437,7 @@ static int install_hostfs(const classic_t *c, const char *support, const adfs_fi
 	size_t len;
 	int i, m;
 
-	snprintf(p->step, sizeof p->step, "Putting %s in its folder...", c->title);
+	snprintf(p->step, sizeof p->step, "Putting %s in its folder...", title);
 	for (i = 0; i < n; i++)
 	{
 		if (host_name(&f[i], name, sizeof name))
@@ -445,6 +446,11 @@ static int install_hostfs(const classic_t *c, const char *support, const adfs_fi
 		if (f[i].dir ? make_dirs(path) : put_file(path, f[i].data, f[i].len))
 			return fail(p, "The game's files can't be saved.");
 	}
+	snprintf(path, sizeof path, "%s/extrom/HostFS,ffa", part);
+	if (put_file(path, hostfs_module, sizeof hostfs_module))
+		return fail(p, "The game's files can't be saved.");
+	if (!support[0])
+		return 0;
 
 	snprintf(p->step, sizeof p->step, "Downloading the support pack...");
 	snprintf(path, sizeof path, "%s/support.zip", part);
@@ -491,10 +497,80 @@ static int install_hostfs(const classic_t *c, const char *support, const adfs_fi
 	free(zip);
 	if (m <= 0)
 		return fail(p, "The support pack isn't a zip.");
-	snprintf(path, sizeof path, "%s/extrom/HostFS,ffa", part);
-	if (put_file(path, hostfs_module, sizeof hostfs_module))
-		return fail(p, "The game's files can't be saved.");
 	return 0;
+}
+
+/* The support pack applications ask for in their !Run files, as RISC OS 3.11 has none of these:
+   the Toolbox, the nested Window Manager, System:, a scrap folder or Choices:. "" for none. */
+const char *needs_support(const adfs_file_t *f, int n)
+{
+	static const char *const asks[] = { "toolbox", "system$path", "wimp$scrapdir", "choices:", "choices$",
+					    "windowmanager 3.8", "windowmanager 3.9", "windowmanager 4" };
+	int i;
+	size_t k, j;
+
+	for (i = 0; i < n; i++)
+	{
+		const char *dot = strchr(f[i].path, '.');
+		char *low;
+
+		if (f[i].dir || f[i].path[0] != '!' || !dot || strcmp(dot, ".!Run") || !f[i].data)
+			continue;
+		low = malloc(f[i].len + 1);
+		for (k = 0; k < f[i].len; k++)
+			low[k] = (char)tolower(f[i].data[k] ? f[i].data[k] : ' ');
+		low[k] = 0;
+		for (j = 0; j < sizeof asks / sizeof *asks && !strstr(low, asks[j]); j++);
+		free(low);
+		if (j < sizeof asks / sizeof *asks)
+			return "toolbox";
+	}
+	return "";
+}
+
+/* Lays a game's RISC OS files out in its folder dir: on ADFS floppy images, disc1.adf onwards,
+   with the application it starts from on the first, or in a HostFS folder when support names a
+   pack or something in it is too big for a floppy. Fills in g's discs. */
+int layout_files(game_t *g, const char *dir, adfs_file_t *files, int n, const char *boot, const char *support, progress_t *p)
+{
+	char path[1100], error[240];
+	adfs_file_t *subset;
+	int *disc, ndiscs, i, k;
+
+	if (strspn(support, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-") != strlen(support))
+		support = "";
+	if (support[0])
+		return install_hostfs(g->title, support, files, n, dir, p);
+	disc = malloc((size_t)n * sizeof *disc);
+	subset = malloc((size_t)n * sizeof *subset);
+	ndiscs = pack(files, n, boot, disc);
+	if (ndiscs)
+		snprintf(p->step, sizeof p->step, "Making %s's discs...", g->title);
+	for (k = 0; k < ndiscs; k++)
+	{
+		uint8_t *img;
+		size_t size;
+		int m = 0;
+
+		for (i = 0; i < n; i++)
+			if (disc[i] == k)
+				subset[m++] = files[i];
+		img = adfs_make(subset, m, g->title, &size, error, sizeof error);
+		snprintf(g->disc[k], sizeof g->disc[0], "disc%d.adf", k + 1);
+		snprintf(path, sizeof path, "%s/%s", dir, g->disc[k]);
+		if (!img || file_write(path, img, size))
+		{
+			free(img);
+			free(disc);
+			free(subset);
+			return fail(p, img ? "The game's discs can't be saved." : error);
+		}
+		free(img);
+	}
+	g->ndiscs = ndiscs;
+	free(disc);
+	free(subset);
+	return ndiscs ? 0 : install_hostfs(g->title, "", files, n, dir, p);   /* too big for floppies */
 }
 
 /* ---- Presets ----
@@ -624,9 +700,9 @@ int preset_setting(const char *id, const char *key, char *buf, size_t size)
 
 int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 {
-	char part[1024], final[1024], path[1100], url[600], error[240], support[40];
-	adfs_file_t *files, *subset;
-	int n, i, k, ndiscs, *disc;
+	char part[1024], final[1024], path[1100], url[600], support[40];
+	adfs_file_t *files;
+	int n, i;
 	uint8_t *zip;
 	size_t len;
 	classic_t found;
@@ -678,61 +754,17 @@ int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 		return fail(p, "The download isn't a zip of the game.");
 	}
 	add_presets(c->id, &files, &n);
-	if (preset_setting(c->id, "support", support, sizeof support) && support[0] &&    /* a support pack: a HostFS folder, not floppies */
-	    strspn(support, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-") == strlen(support))
+	snprintf(g.title, sizeof g.title, "%s", c->title);
+	if (!preset_setting(c->id, "support", support, sizeof support))
+		support[0] = 0;
+	if (layout_files(&g, part, files, n, c->boot, support, p))
 	{
-		if (install_hostfs(c, support, files, n, part, p))
-		{
-			adfs_free(files, n);
-			remove_tree(part);
-			return -1;
-		}
-		adfs_free(files, n);
-		goto made;
-	}
-
-	snprintf(p->step, sizeof p->step, "Making %s's discs...", c->title);
-	disc = malloc(n * sizeof *disc);
-	subset = malloc(n * sizeof *subset);
-	ndiscs = pack(files, n, c->boot, disc);
-	if (!ndiscs)
-	{
-		free(disc);
-		free(subset);
 		adfs_free(files, n);
 		remove_tree(part);
-		return fail(p, "The game is too big for floppy discs.");
+		return -1;
 	}
-	for (k = 0; k < ndiscs; k++)
-	{
-		uint8_t *img;
-		size_t size;
-		int m = 0;
-
-		for (i = 0; i < n; i++)
-			if (disc[i] == k)
-				subset[m++] = files[i];
-		img = adfs_make(subset, m, c->title, &size, error, sizeof error);
-		snprintf(g.disc[k], sizeof g.disc[0], "disc%d.adf", k + 1);
-		snprintf(path, sizeof path, "%s/%s", part, g.disc[k]);
-		if (!img || file_write(path, img, size))
-		{
-			free(img);
-			free(disc);
-			free(subset);
-			adfs_free(files, n);
-			remove_tree(part);
-			return fail(p, img ? "The game's discs can't be saved." : error);
-		}
-		free(img);
-	}
-	g.ndiscs = ndiscs;
-	free(disc);
-	free(subset);
 	adfs_free(files, n);
 
-made:
-	snprintf(g.title, sizeof g.title, "%s", c->title);
 	snprintf(g.info, sizeof g.info, "%s", c->info);
 	snprintf(g.boot, sizeof g.boot, "%s", c->boot);
 	g.classic = 1;
@@ -740,22 +772,7 @@ made:
 	g.desktop = desktop;
 	g.menu = menu;
 	store_save(&g);
-	{
-		/* the icon: the sprite named after the application, or the one that looks most like an icon */
-		sprite_t *sprites;
-		int count = store_sprites(&g, &sprites), pick = count ? sprites_main(sprites, count) : -1;
-
-		for (i = 0; i < count; i++)
-		{
-			const char *a = sprites[i].name, *b = g.boot;
-
-			for (; *a && tolower((unsigned char)*a) == tolower((unsigned char)*b); a++, b++);
-			if (!*a && !*b)
-				pick = i;
-		}
-		store_set_icon(&g, pick >= 0 ? &sprites[pick] : NULL);
-		sprites_free(sprites, count);
-	}
+	store_pick_icon(&g);
 
 	p->percent = 100;
 	snprintf(g.id, sizeof g.id, "%s", c->id);

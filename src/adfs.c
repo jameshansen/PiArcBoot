@@ -317,6 +317,58 @@ int adfs_from_zip(const uint8_t *zip, size_t zlen, const char *prefix, adfs_file
 	return count;
 }
 
+/* An archive's files with the folder its applications are in made the top: Apps.Games.!Foo comes
+   out as !Foo, and what isn't in that folder, a package's RiscPkg say, is left out. Applications
+   in more than one folder keep the folder they share. Returns how many files are left. */
+int adfs_app_root(adfs_file_t *f, int n)
+{
+	char root[512] = "";
+	int have = 0, i, k = 0;
+	size_t rl;
+
+	for (i = 0; i < n; i++)
+	{
+		const char *p = f[i].path, *app = p[0] == '!' ? p : strstr(p, ".!");
+		size_t len, c = 0;
+
+		if (!app)
+			continue;
+		len = (size_t)(app - p);        /* the folder holding the application */
+		if (!have)
+		{
+			snprintf(root, sizeof root, "%.*s", (int)len, p);
+			have = 1;
+			continue;
+		}
+		while (root[c] && c < len && root[c] == p[c])
+			c++;
+		if (!((!root[c] || root[c] == '.') && (c == len || p[c] == '.')))
+			while (c > 0 && root[c] != '.')         /* back to the last whole folder in common */
+				c--;
+		root[c] = 0;
+	}
+	if (!root[0])
+		return n;
+	rl = strlen(root);
+	for (i = 0; i < n; i++)
+	{
+		if (!strncmp(f[i].path, root, rl) && f[i].path[rl] == '.')
+		{
+			char *inner = strdup(f[i].path + rl + 1);
+
+			free((char *)f[i].path);
+			f[k] = f[i];
+			f[k++].path = inner;
+		}
+		else
+		{
+			free((char *)f[i].path);
+			free((uint8_t *)f[i].data);
+		}
+	}
+	return k;
+}
+
 void adfs_free(adfs_file_t *files, int n)
 {
 	while (n-- > 0)

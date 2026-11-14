@@ -71,6 +71,12 @@ uint8_t *adfs_make(const adfs_file_t *files, int n, const char *disc_name, size_
 int adfs_from_zip(const uint8_t *zip, size_t len, const char *prefix, adfs_file_t **out);
 void adfs_free(adfs_file_t *files, int n);
 int adfs_selftest(void);
+int adfs_app_root(adfs_file_t *files, int n);   /* the folder an archive's applications are in made the top */
+
+/* arc.c: Spark and ArcFS archives */
+int arc_is_archive(const uint8_t *data, size_t len);
+int arc_files(const uint8_t *data, size_t len, adfs_file_t **out, char *error, size_t error_size);
+int arc_selftest(void);
 
 /* png.c */
 int png_write(const char *fn, const uint8_t *rgba, int w, int h);
@@ -127,6 +133,7 @@ typedef struct
 	int fdc;                /* 1 for the 82C711 floppy controller */
 	int jaspp;              /* 1 from the JASPP list, 0 one of the user's own */
 	int classic;            /* 1 from the Classics tab */
+	int apps;               /* 1 made from an archive of applications: it starts as a Classics game does */
 	int scale;              /* window size, 1 to 3 */
 	int fullscreen;
 	int nocapture;          /* the mouse isn't captured: the pointer goes where the host's is */	int desktop, menu;      /* has a desktop shortcut, a menu entry */
@@ -169,6 +176,7 @@ void store_shortcuts(const game_t *g);
 void store_icon(const game_t *g, uint8_t *out);
 int store_sprites(const game_t *g, sprite_t **out);
 int store_set_icon(const game_t *g, const sprite_t *s);
+void store_pick_icon(game_t *g);        /* the sprite named after its application, or the most icon-like one */
 int store_boot_choices(const game_t *g, char choices[][64], int max);
 int catalog_count(void);
 const entry_t *catalog_entry(int i);
@@ -195,6 +203,7 @@ typedef struct
 /* A setting from presets/<game>.ini beside the program, which presets/README.md in the repository
    describes. 1 with its value in buf if the game's file has the key. */
 int preset_setting(const char *id, const char *key, char *buf, size_t size);
+const char *needs_support(const adfs_file_t *files, int n);     /* the support pack their !Run files ask for, or "" */
 
 int classic_count(void);
 const classic_t *classic_entry(int i);
@@ -204,6 +213,7 @@ int classics_sources(char urls[][300], int max);
 void classics_add_source(const char *url);
 void classics_remove_source(int i);
 int install_classic(const classic_t *c, int desktop, int menu, progress_t *p);
+int layout_files(game_t *g, const char *dir, adfs_file_t *files, int n, const char *boot, const char *support, progress_t *p);
 char **pick_files(int *n);
 void open_url(const char *url);
 

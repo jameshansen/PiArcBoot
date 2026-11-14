@@ -557,7 +557,7 @@ static void app_events(int cs)
 		return;
 	if (emu_host_clicked > app.clicked)
 	{
-		if (game.classic)               /* a desktop game, going; a JASPP game takes the screen or asks for a disc next */
+		if (game.classic || game.apps)  /* a desktop game, going; a JASPP game takes the screen or asks for a disc next */
 			app_ready(1);
 		return;
 	}
@@ -582,8 +582,8 @@ static int boot_script(void)
 		emu_script("key shift down\nuntilread 600\nkey shift up\n");
 		return 270;
 	}
-	app.run_at = game.classic ? 0 : 1000;
-	return game.classic ? 1500 : 1300;
+	app.run_at = game.classic || game.apps ? 0 : 1000;
+	return game.classic || game.apps ? 1500 : 1300;
 }
 
 int game_main(const char *id, const char *test_script)
@@ -633,7 +633,7 @@ int game_main(const char *id, const char *test_script)
 
 	machine_fixed_time = test_script != NULL;
 	memcpy(cmos, default_cmos, sizeof cmos);
-	if (game.classic)               /* a 640 by 512 desktop in 256 colours, mode 21 on a multisync monitor, for the games that play in it */
+	if (game.classic || game.apps)  /* a 640 by 512 desktop in 256 colours, mode 21 on a multisync monitor, for the games that play in it */
 		machine_cmos_desktop(cmos, 21, 1);
 	/* A game with a support pack has modules in an extension ROM, which RISC OS takes up at power on
 	   in place of older ones of the same name, and a folder of the computer's own as HostFS */

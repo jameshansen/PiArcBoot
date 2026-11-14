@@ -137,6 +137,7 @@ int store_load(const char *id, game_t *g)
 		else if (!strcmp(line, "readonly") && n_ro < MAX_DISCS) snprintf(ro[n_ro++], sizeof ro[0], "%s", v);
 		else if (!strcmp(line, "jaspp")) g->jaspp = atoi(v);
 		else if (!strcmp(line, "classic")) g->classic = atoi(v);
+		else if (!strcmp(line, "apps")) g->apps = atoi(v);
 		else if (!strcmp(line, "scale")) g->scale = atoi(v) < 1 ? 1 : atoi(v) > 3 ? 3 : atoi(v);
 		else if (!strcmp(line, "fullscreen")) g->fullscreen = atoi(v);
 		else if (!strcmp(line, "capture")) g->nocapture = !atoi(v);
@@ -174,8 +175,8 @@ int store_save(const game_t *g)
 	f = fopen(path, "w");
 	if (!f)
 		return -1;
-	fprintf(f, "title=%s\ninfo=%s\nboot=%s\nversion=%s\nsprite=%s\nfdc=%d\njaspp=%d\nclassic=%d\nscale=%d\nfullscreen=%d\ncapture=%d\ndesktop=%d\nmenu=%d\n",
-		g->title, g->info, g->boot, g->version, g->sprite, g->fdc, g->jaspp, g->classic, g->scale, g->fullscreen, !g->nocapture,
+	fprintf(f, "title=%s\ninfo=%s\nboot=%s\nversion=%s\nsprite=%s\nfdc=%d\njaspp=%d\nclassic=%d\napps=%d\nscale=%d\nfullscreen=%d\ncapture=%d\ndesktop=%d\nmenu=%d\n",
+		g->title, g->info, g->boot, g->version, g->sprite, g->fdc, g->jaspp, g->classic, g->apps, g->scale, g->fullscreen, !g->nocapture,
 		g->desktop, g->menu);
 	for (i = 0; i < g->ndiscs; i++)
 		fprintf(f, "disc=%s\n", g->disc[i]);
@@ -523,6 +524,15 @@ static int disc_root(const uint8_t *d, size_t len, char names[][64], int max, in
 	return n;
 }
 
+/* Names as RISC OS sorts them, without regard to case */
+static int by_choice(const void *a, const void *b)
+{
+	const char *x = a, *y = b;
+
+	for (; *x && tolower((unsigned char)*x) == tolower((unsigned char)*y); x++, y++);
+	return tolower((unsigned char)*x) - tolower((unsigned char)*y);
+}
+
 static int is_system(const char *name)
 {
 	static const char *const sys[] = { "!boot", "!system", "!fonts", "!scrap", "!sysmerge", "!fontmerge", "!help" };
@@ -548,9 +558,33 @@ int store_boot_choices(const game_t *g, char choices[][64], int max)
 	uint8_t *img;
 	size_t len;
 
+	if (!g->ndiscs)         /* a game in a HostFS folder: the applications in it, the first that isn't the system's first */
+	{
+		DIR *d;
+		struct dirent *e;
+
+		store_game_path(g->id, "hostfs", path, sizeof path);
+		d = opendir(path);
+		while (d && (e = readdir(d)) && count < max && count < 80)
+		{
+			char sub[1100];
+
+			snprintf(sub, sizeof sub, "%s/%s", path, e->d_name);
+			if (e->d_name[0] == '!' && strlen(e->d_name) < 64 && is_dir(sub))
+				snprintf(names[count++], 64, "%s", e->d_name);
+		}
+		if (d)
+			closedir(d);
+		qsort(names, (size_t)count, sizeof names[0], by_choice);
+		for (i = 0, n = 0; i < count; i++)
+			if (!is_system(names[i]))
+				snprintf(choices[n++], 64, "%s", names[i]);
+		for (i = 0; i < count; i++)
+			if (is_system(names[i]))
+				snprintf(choices[n++], 64, "%s", names[i]);
+		return n;
+	}
 	snprintf(choices[count++], 64, "%s", "");
-	if (!g->ndiscs)
-		return count;
 	store_game_path(g->id, g->disc[0], path, sizeof path);
 	img = image_sectors(path, &len);
 	n = img ? disc_root(img, len, names, 80, &option) : -1;
@@ -878,15 +912,24 @@ static int disc_number(const char *name)
 static void detect(game_t *g)
 {
 	char path[1024], choices[40][64];
+
+	if (g->ndiscs)
+	{
+		store_game_path(g->id, g->disc[0], path, sizeof path);
+		g->fdc = image_is_hd(path);
+	}
+	if (store_boot_choices(g, choices, 40))
+		snprintf(g->boot, sizeof g->boot, "%s", choices[0]);
+	store_pick_icon(g);
+}
+
+/* A game's icon: the sprite named after the application it starts from, or failing that the one
+   on its discs (or in its HostFS folder) that looks most like an icon */
+void store_pick_icon(game_t *g)
+{
 	sprite_t *sprites;
 	int n, i, pick;
 
-	if (!g->ndiscs)
-		return;
-	store_game_path(g->id, g->disc[0], path, sizeof path);
-	g->fdc = image_is_hd(path);
-	store_boot_choices(g, choices, 40);
-	snprintf(g->boot, sizeof g->boot, "%s", choices[0]);
 	n = store_sprites(g, &sprites);
 	pick = n ? sprites_main(sprites, n) : -1;
 	for (i = 0; i < n && g->boot[0]; i++)   /* the sprite named after the application, if there is one */
@@ -1198,15 +1241,208 @@ static int by_name(const void *a, const void *b)
 	return ds && dt && ds != dt ? ds - dt : strcmp(s, t);
 }
 
-/* Makes a game from disc images of the user's own, or with add_to adds the images to the game of
-   that name. A zip file among them stands for the disc images inside it. The new game's name is
-   put in id_out. Returns 0, or -1 with the reason in error. */
-int import_game(char **files, int n, const char *add_to, char *id_out, char *error, size_t error_size)
+/* A new game named after a file of it: "Name (1995) (Publisher) F1001501.jfd" gives the title and
+   the line under it, and the title a folder name no other game has */
+static void new_game(game_t *g, const char *file)
 {
-	char *list[64], tmp[1024], path[1300], title[128], *p;
-	int count = 0, made = 0, i, k, order[MAX_DISCS], sorted = 1;
+	char title[128], path[1300], *p;
+	int i, k;
+
+	memset(g, 0, sizeof *g);
+	snprintf(title, sizeof title, "%s", base_name(file));
+	k = (int)strlen(title);
+	if (k > 4 && title[k - 4] == ',' && strspn(title + k - 3, "0123456789abcdefABCDEF") == 3)
+		title[k - 4] = 0;               /* a RISC OS type after a comma, as in Game,ddc */
+	if (disc_clue(title, &k) && k >= 0)     /* "Name (Disk 1 of 3).adf" is called Name */
+		title[k] = 0;
+	else if ((p = strrchr(title, '.')))
+		*p = 0;
+	if ((p = strstr(title, " (")))
+	{
+		char *year = p + 2, *pub = strstr(year, " (");
+
+		*p = 0;
+		year[strcspn(year, ")")] = 0;
+		if (pub)
+			pub[2 + strcspn(pub + 2, ")")] = 0;
+		if (strlen(year) == 4 && strspn(year, "0123456789") == 4)       /* not "(Disc 1)" */
+			snprintf(g->info, sizeof g->info, "%s%s%s", year, pub ? ", " : "", pub ? pub + 2 : "");
+	}
+	for (p = title + strlen(title); p > title && (p[-1] == ' ' || p[-1] == '_' || p[-1] == '-'); )
+		*--p = 0;
+	snprintf(g->title, sizeof g->title, "%s", title[0] ? title : "Game");
+	for (i = 0, k = 0; g->title[i] && k < 40; i++)
+		if (isalnum((unsigned char)g->title[i]))
+			g->id[k++] = g->title[i];
+		else if (k && g->id[k - 1] != '-')
+			g->id[k++] = '-';
+	if (!k)
+		snprintf(g->id, sizeof g->id, "Game");
+	for (i = 2; ; i++)              /* a folder name no other game has */
+	{
+		store_game_path(g->id, "", path, sizeof path);
+		if (!exists(path))
+			break;
+		snprintf(g->id + k, sizeof g->id - k, "-%d", i);
+	}
+	g->scale = 2;
+}
+
+/* ---- Archives of applications ----
+
+   A zip of RISC OS files rather than disc images, or a Spark or ArcFS archive, is laid out as a
+   Classics game is: the folder its applications are in made the top, on floppy images, or in a
+   HostFS folder when it is too big for floppies or its applications' !Run files ask for what the
+   support pack gives. It starts from the application named after the archive, or failing that its
+   biggest, and as a Classics game does, on the desktop at once. */
+
+static int is_zip(const uint8_t *d, size_t len)
+{
+	return len >= 4 && !memcmp(d, "PK\3\4", 4);
+}
+
+/* 1 for a zip with no disc images in it, or a Spark or ArcFS archive */
+static int is_app_archive(const char *file)
+{
+	size_t len;
+	uint8_t *d = file_read(file, &len);
+	int is = 0;
+
+	if (d && is_zip(d, len))
+	{
+		zipent_t *ents;
+		int m = zip_list(d, len, &ents), k;
+
+		is = m > 0;
+		for (k = 0; k < m; k++)
+			is &= !is_image_name(base_name(ents[k].name));
+		if (m > 0)
+			free(ents);
+	}
+	else if (d)
+		is = arc_is_archive(d, len);
+	free(d);
+	return is;
+}
+
+/* The application the game starts from: the one named after the game, or the biggest */
+static void archive_boot(const adfs_file_t *f, int n, const char *title, char *boot, size_t size)
+{
+	char names[64][64];
+	uint32_t sizes[64];
+	int count = 0, i, k, best = -1;
+
+	for (i = 0; i < n; i++)
+	{
+		size_t len = strcspn(f[i].path, ".");
+
+		if (f[i].path[0] != '!' || len >= 64)
+			continue;
+		for (k = 0; k < count && (strlen(names[k]) != len || strncmp(names[k], f[i].path, len)); k++);
+		if (k == count)
+		{
+			if (count == 64)
+				continue;
+			snprintf(names[count], 64, "%.*s", (int)len, f[i].path);
+			sizes[count++] = 0;
+		}
+		sizes[k] += f[i].len;
+	}
+	for (k = 0; k < count; k++)
+	{
+		if (is_system(names[k]))
+			continue;
+		if (!by_choice(names[k] + 1, title))
+		{
+			best = k;
+			break;
+		}
+		if (best < 0 || sizes[k] > sizes[best])
+			best = k;
+	}
+	snprintf(boot, size, "%s", best >= 0 ? names[best] : "");
+}
+
+static int import_apps(char **files, int n, char *id_out, char *error, size_t error_size)
+{
+	char dir[1300];
+	adfs_file_t *all = NULL;
+	int total = 0, i;
+	progress_t p;
 	game_t g;
 
+	for (i = 0; i < n; i++)
+	{
+		adfs_file_t *f = NULL;
+		size_t len;
+		uint8_t *d = file_read(files[i], &len);
+		int m = !d ? -1 : is_zip(d, len) ? adfs_from_zip(d, len, "", &f) : arc_files(d, len, &f, error, error_size);
+
+		if (m < 0)
+		{
+			if (!d)
+				snprintf(error, error_size, "%s can't be read.", base_name(files[i]));
+			free(d);
+			adfs_free(all, total);
+			return -1;
+		}
+		free(d);
+		all = realloc(all, (size_t)(total + m + 1) * sizeof *all);
+		if (m)
+			memcpy(all + total, f, (size_t)m * sizeof *f);
+		free(f);
+		total += m;
+	}
+	total = adfs_app_root(all, total);
+	new_game(&g, files[0]);
+	archive_boot(all, total, g.title, g.boot, sizeof g.boot);
+	if (!g.boot[0])
+	{
+		snprintf(error, error_size, "There's no application in that archive to start a game from.");
+		adfs_free(all, total);
+		return -1;
+	}
+	g.apps = 1;
+	store_game_path(g.id, "", dir, sizeof dir);
+	make_dirs(dir);
+	memset(&p, 0, sizeof p);
+	if (layout_files(&g, dir, all, total, g.boot, needs_support(all, total), &p))
+	{
+		snprintf(error, error_size, "%s", p.error);
+		adfs_free(all, total);
+		remove_tree(dir);
+		return -1;
+	}
+	adfs_free(all, total);
+	store_save(&g);
+	store_pick_icon(&g);
+	store_shortcuts(&g);
+	if (id_out)
+		snprintf(id_out, sizeof g.id, "%s", g.id);
+	return 0;
+}
+
+/* Makes a game from disc images of the user's own, or with add_to adds the images to the game of
+   that name. A zip file among them stands for the disc images inside it, and archives of
+   applications make a game of their own (above). The new game's name is put in id_out. Returns
+   0, or -1 with the reason in error. */
+int import_game(char **files, int n, const char *add_to, char *id_out, char *error, size_t error_size)
+{
+	char *list[64], tmp[1024], path[1300];
+	int count = 0, made = 0, i, k, order[MAX_DISCS], sorted = 1, apps = 0;
+	game_t g;
+
+	for (i = 0; i < n; i++)
+		apps += is_app_archive(files[i]);
+	if (apps)               /* archives of applications make a game of their own */
+	{
+		if (apps < n)
+		{
+			snprintf(error, error_size, "Add disc images and archives of applications separately.");
+			return -1;
+		}
+		return import_apps(files, n, id_out, error, error_size);
+	}
 	snprintf(tmp, sizeof tmp, "%s/import.tmp", store_dir());
 	remove_tree(tmp);
 	for (i = 0; i < n && count < 64; i++)
@@ -1239,53 +1475,14 @@ int import_game(char **files, int n, const char *add_to, char *id_out, char *err
 	}
 	if (!count)
 	{
-		snprintf(error, error_size, "None of those files is a disc image. PiArcBoot reads JFD, ADF, ADL and HFE images.");
+		snprintf(error, error_size, "None of those files is a disc image or an archive of applications. PiArcBoot reads JFD, ADF, ADL and HFE images, and zip, Spark and ArcFS archives.");
 		remove_tree(tmp);
 		return -1;
 	}
 	qsort(list, count, sizeof *list, by_name);
 
-	if (add_to && !store_load(add_to, &g))
-		;
-	else
-	{
-		memset(&g, 0, sizeof g);
-		/* "Name (1995) (Publisher) F1001501.jfd" gives the title and the line under it */
-		snprintf(title, sizeof title, "%s", base_name(list[0]));
-		if (disc_clue(title, &k) && k >= 0)     /* "Name (Disk 1 of 3).adf" is called Name */
-			title[k] = 0;
-		else if ((p = strrchr(title, '.')))
-			*p = 0;
-		if ((p = strstr(title, " (")))
-		{
-			char *year = p + 2, *pub = strstr(year, " (");
-
-			*p = 0;
-			year[strcspn(year, ")")] = 0;
-			if (pub)
-				pub[2 + strcspn(pub + 2, ")")] = 0;
-			if (strlen(year) == 4 && strspn(year, "0123456789") == 4)       /* not "(Disc 1)" */
-				snprintf(g.info, sizeof g.info, "%s%s%s", year, pub ? ", " : "", pub ? pub + 2 : "");
-		}
-		for (p = title + strlen(title); p > title && (p[-1] == ' ' || p[-1] == '_' || p[-1] == '-'); )
-			*--p = 0;
-		snprintf(g.title, sizeof g.title, "%s", title[0] ? title : "Game");
-		for (i = 0, k = 0; g.title[i] && k < 40; i++)
-			if (isalnum((unsigned char)g.title[i]))
-				g.id[k++] = g.title[i];
-			else if (k && g.id[k - 1] != '-')
-				g.id[k++] = '-';
-		if (!k)
-			snprintf(g.id, sizeof g.id, "Game");
-		for (i = 2; ; i++)              /* a folder name no other game has */
-		{
-			store_game_path(g.id, "", path, sizeof path);
-			if (!exists(path))
-				break;
-			snprintf(g.id + k, sizeof g.id - k, "-%d", i);
-		}
-		g.scale = 2;
-	}
+	if (!add_to || store_load(add_to, &g))
+		new_game(&g, list[0]);
 
 	store_game_path(g.id, "", path, sizeof path);
 	make_dirs(path);
@@ -1406,10 +1603,10 @@ char **pick_files(int *n)
 		char *p;
 
 		buf[0] = 0;
-		ofn.lpstrFilter = "Disc images\0*.jfd;*.adf;*.hfe;*.adl;*.zip\0All files\0*.*\0";
+		ofn.lpstrFilter = "Disc images and archives\0*.jfd;*.adf;*.hfe;*.adl;*.zip;*.arc;*.spk\0All files\0*.*\0";
 		ofn.lpstrFile = buf;
 		ofn.nMaxFile = sizeof buf;
-		ofn.lpstrTitle = "Add Game: choose its disc images";
+		ofn.lpstrTitle = "Add Game: choose its disc images, or an archive of its applications";
 		ofn.Flags = OFN_ALLOWMULTISELECT | OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
 		if (!GetOpenFileNameA(&ofn))
 			return NULL;
@@ -1432,8 +1629,8 @@ char **pick_files(int *n)
 	{
 		char *out, *p;
 
-		out = run_output("zenity --file-selection --multiple --separator='\n' --title='Add Game: choose its disc images' "
-				 "--file-filter='Disc images | *.jfd *.JFD *.adf *.ADF *.hfe *.HFE *.adl *.ADL *.zip *.ZIP' "
+		out = run_output("zenity --file-selection --multiple --separator='\n' --title='Add Game: choose its disc images, or an archive of its applications' "
+				 "--file-filter='Disc images and archives | *.jfd *.JFD *.adf *.ADF *.hfe *.HFE *.adl *.ADL *.zip *.ZIP *.arc *.ARC *.spk *.SPK *,ddc *,3fb *,a91' "
 				 "--file-filter='All files | *' 2>/dev/null");
 		if (!out && run_command("command -v zenity >/dev/null 2>&1"))
 		{

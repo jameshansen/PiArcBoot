@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
+#include <zlib.h>
 #include "piarcboot.h"
 #include "default_cmos.h"
 
@@ -200,6 +201,33 @@ static int cmd_icon(int argc, char **argv)
 	return png_write(argv[1], rgba, 128, 128) ? 1 : 0;
 }
 
+/* Lists a Spark or ArcFS archive: each file's load and execution addresses, its length, a CRC-32
+   of its contents and its path */
+static int cmd_arc(const char *file)
+{
+	char error[200];
+	adfs_file_t *f;
+	size_t len;
+	uint8_t *d = file_read(file, &len);
+	int n = d ? arc_files(d, len, &f, error, sizeof error) : -1, i;
+
+	if (n < 0)
+	{
+		fprintf(stderr, "%s\n", d ? error : "can't read it");
+		free(d);
+		return 1;
+	}
+	free(d);
+	for (i = 0; i < n; i++)
+		if (f[i].dir)
+			printf("dir                                %s\n", f[i].path);
+		else
+			printf("%08x %08x %7u %08lx %s\n", (unsigned)f[i].load, (unsigned)f[i].exec, (unsigned)f[i].len,
+			       crc32(0, f[i].data, f[i].len), f[i].path);
+	adfs_free(f, n);
+	return 0;
+}
+
 /* The checks that need nothing but the program itself */
 static int cmd_check(void)
 {
@@ -215,6 +243,11 @@ static int cmd_check(void)
 	if (adfs_selftest())
 	{
 		printf("FAIL: an ADFS disc made from files\n");
+		fails++;
+	}
+	if (arc_selftest())
+	{
+		printf("FAIL: a Spark or ArcFS archive\n");
 		fails++;
 	}
 	icon_app(rgba);
@@ -276,6 +309,20 @@ int main(int argc, char **argv)
 		return cmd_icon(argc - 2, argv + 2);
 	if (!strcmp(cmd, "check"))
 		return cmd_check();
+	if (!strcmp(cmd, "arc") && argc > 2)            /* the files in a Spark or ArcFS archive, for the test scripts */
+		return cmd_arc(argv[2]);
+	if (!strcmp(cmd, "add") && argc > 2)            /* a game from disc images or archives, as Add Game makes one */
+	{
+		char id[80], error[240];
+
+		if (import_game(argv + 2, argc - 2, NULL, id, error, sizeof error))
+		{
+			fprintf(stderr, "%s\n", error);
+			return 1;
+		}
+		printf("%s\n", id);
+		return 0;
+	}
 	if (!strcmp(cmd, "classic") && argc == 2)       /* fetch the PackMan sources and list the Classics tab's games */
 	{
 		classics_refresh();
