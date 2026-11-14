@@ -474,56 +474,48 @@ void icon_render(uint8_t *out, const sprite_t *s)
 	free(back);
 }
 
-/* Small pictures drawn here, one character a pixel */
-static void art_sprite(sprite_t *s, const char *const *rows, int w, int h, const char *keys, const uint32_t *colours)
+/* The icon of a game that has no sprite: a 3.5 inch floppy disc, drawn here from its shapes. A
+   dark blue square with its top right corner cut off, the metal shutter at the top with its
+   window, a white label below with ruled lines, and the write protect hole at the bottom left. */
+static void fill_floppy(double x, double y, double *rgb, void *p)
 {
-	int x, y;
+	const double side = 1.30 * R_IN, cut = 0.14, line = 1.3 / side;
+	double u = (x - (CX - side / 2)) / side, v = (y - (CY - side / 2)) / side;
+	double t = (y - (CY - R_IN)) / (2 * R_IN);
 
-	memset(s, 0, sizeof *s);
-	s->w = w;
-	s->h = h;
-	s->masked = 1;
-	s->rgba = calloc((size_t)w * h, 4);
-	for (y = 0; y < h; y++)
-		for (x = 0; x < w; x++)
-		{
-			const char *k = strchr(keys, rows[y][x]);
-			uint8_t *o = s->rgba + (y * w + x) * 4;
-
-			if (!k || rows[y][x] == ' ')
-				continue;
-			o[0] = colours[k - keys] >> 16; o[1] = colours[k - keys] >> 8; o[2] = colours[k - keys]; o[3] = 255;
-		}
+	(void)p;
+#define SET(r, g, b) (rgb[0] = (r), rgb[1] = (g), rgb[2] = (b))
+	SET(191 + 43 * t, 233 + 15 * t, 255);           /* the pale ground round it */
+	if (u < 0 || u > 1 || v < 0 || v > 1 || u - v > 1 - cut)
+		return;
+	if (u < line || u > 1 - line || v < line || v > 1 - line || u - v > 1 - cut - line * 1.4142)
+		SET(14, 28, 56);                        /* its edge */
+	else if (u > 0.24 && u < 0.76 && v < 0.38)      /* the shutter */
+	{
+		if (u > 0.53 && u < 0.66 && v > 0.07 && v < 0.30)
+			SET(34, 38, 46);                /* its window */
+		else if (u < 0.24 + line || u > 0.76 - line || v > 0.38 - line)
+			SET(110, 116, 124);
+		else
+			SET(214 - 50 * v, 218 - 50 * v, 224 - 50 * v);
+	}
+	else if (u > 0.13 && u < 0.87 && v > 0.48 && v < 0.95)  /* the label */
+	{
+		if (u > 0.2 && u < 0.8 && (fabs(v - 0.62) < 0.012 || fabs(v - 0.72) < 0.012 || fabs(v - 0.82) < 0.012))
+			SET(190, 200, 218);
+		else
+			SET(246, 246, 242);
+	}
+	else if (u > 0.04 && u < 0.10 && v > 0.86 && v < 0.93)
+		SET(12, 20, 40);                        /* the write protect hole */
+	else
+		SET(44 - 16 * v, 88 - 30 * v, 168 - 48 * v);    /* the body, darker towards its foot */
+#undef SET
 }
 
-/* The icon of a game that has no sprite: a floppy disc */
 void icon_generic(uint8_t *out)
 {
-	static const char *const rows[] = {
-		"kkkkkkkkkkkkkkkk  ",
-		"kbbkssssssskwbbkk ",
-		"kbbkssssssskwbbbkk",
-		"kbbkssssssskwbbbbk",
-		"kbbkssssssskwbbbbk",
-		"kbbkssssssskkbbbbk",
-		"kbbkkkkkkkkkbbbbbk",
-		"kbbbbbbbbbbbbbbbbk",
-		"kbbbbbbbbbbbbbbbbk",
-		"kbkkkkkkkkkkkkkkbk",
-		"kbkwwwwwwwwwwwwkbk",
-		"kbkwggggggggggwkbk",
-		"kbkwwwwwwwwwwwwkbk",
-		"kbkwggggggggggwkbk",
-		"kbkwwwwwwwwwwwwkbk",
-		"kbkwggggggggwwwkbk",
-		"kbkwwwwwwwwwwwwkbk",
-		"kkkkkkkkkkkkkkkkkk" };
-	static const uint32_t colours[] = { 0x202020, 0x0055bb, 0xbbbbbb, 0xffffff, 0x999999 };
-	sprite_t s;
-
-	art_sprite(&s, rows, 18, 18, "kbswg", colours);
-	icon_render(out, &s);
-	free(s.rgba);
+	circle(out, fill_floppy, NULL);
 }
 
 /* PiArcBoot's own icon: the Archimedes's badge, drawn here from its shapes. The A is a white

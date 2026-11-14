@@ -32,17 +32,21 @@ void emu_state(char *buf, size_t size);         /* a line that tells the end of 
 /* ROO311's HostLink module, which works the desktop for the game window */
 extern int emu_hostlink;        /* it has made itself known */
 extern int emu_host_modes;      /* screen mode changes it has reported */
-extern int emu_host_modes_at_run;      /* and how many there had been when it last started a command, or -1 */
-extern int emu_host_vidc_at_run;       /* machine_mode_sets then, for a game that sets up the VIDC itself */
+extern int emu_host_errors;     /* error boxes it has seen open */
+extern int emu_host_tasks;      /* tasks it has seen start in the desktop */
+extern int emu_host_modes_at_run, emu_host_errors_at_run, emu_host_tasks_at_run;      /* those counts when it last took up a command to start, or -1 */
+extern int emu_host_vidc_at_run;        /* and machine_mode_sets then */
 extern int emu_host_clicked, emu_host_missed;  /* icon bar clicks made, and asked for with no such icon */
 void emu_host_run(const char *command);        /* start a *command as a task in the desktop */
 void emu_host_click(const char *sprite);       /* click the icon bar icon with that sprite on it */
+void emu_host_forget(void);                     /* drop what hasn't been sent yet */
 void emu_host_pointer(int x, int y);           /* put the pointer there, in OS units */
 
 extern int machine_fixed_time;  /* set before power on: the clock starts at noon on 1 January 1992 and runs with machine time */
 extern int machine_disc_reads;  /* sector reads the floppy controller has been asked for */
 extern int machine_mode_sets;   /* writes to the VIDC's horizontal cycle register, as setting up a screen mode makes */
 int machine_disc(int drive, const char *path, int write_protect);
+void machine_cmos_desktop(uint8_t *cmos, int mode, int monitor);     /* a desktop mode and monitor type in place of Auto */
 int machine_motor_on(void);     /* the floppy drive's motor is turning */
 void machine_close(void);       /* writes back what games saved to their discs */
 

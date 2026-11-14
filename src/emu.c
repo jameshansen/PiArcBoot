@@ -695,7 +695,8 @@ void HDC_Write(ARMul_State *state, uint_fast16_t offset, uint_fast16_t data)
 
 enum { HL_HELLO = 0x20, HL_POLL, HL_EVENT, HL_POINTER };
 
-int emu_hostlink, emu_host_modes, emu_host_clicked, emu_host_missed, emu_host_modes_at_run = -1, emu_host_vidc_at_run = -1;
+int emu_hostlink, emu_host_modes, emu_host_clicked, emu_host_missed, emu_host_errors, emu_host_tasks;
+int emu_host_modes_at_run = -1, emu_host_errors_at_run = -1, emu_host_tasks_at_run = -1, emu_host_vidc_at_run = -1;
 static struct
 {
 	int code;
@@ -720,6 +721,11 @@ void emu_host_run(const char *command)
 void emu_host_click(const char *sprite)
 {
 	hl_add(2, sprite);
+}
+
+void emu_host_forget(void)
+{
+	hl_count = 0;
 }
 
 void emu_host_pointer(int x, int y)
@@ -754,9 +760,11 @@ static bool hostlink_swi(ARMul_State *state, unsigned number)
 					ARMul_StoreByte(state, buf + i, (uint8_t)t[i]);
 				ARMul_StoreByte(state, buf + i, 0);
 				state->Reg[0] = (ARMword)hl_queue[0].code;
-				if (hl_queue[0].code == 1)
+				if (hl_queue[0].code == 1)      /* where the module's counts stood as it took up a command to start */
 				{
 					emu_host_modes_at_run = emu_host_modes;
+					emu_host_errors_at_run = emu_host_errors;
+					emu_host_tasks_at_run = emu_host_tasks;
 					emu_host_vidc_at_run = machine_mode_sets;
 				}
 				memmove(hl_queue, hl_queue + 1, --hl_count * sizeof *hl_queue);
@@ -771,6 +779,10 @@ static bool hostlink_swi(ARMul_State *state, unsigned number)
 			emu_host_clicked++;
 		else if (state->Reg[0] == 3)
 			emu_host_missed++;
+		else if (state->Reg[0] == 4 && state->Reg[1] == 1)
+			emu_host_errors++;
+		else if (state->Reg[0] == 5)
+			emu_host_tasks++;
 		if (tracing)
 			fprintf(stderr, "hostlink event %u %u\n", (unsigned)state->Reg[0], (unsigned)state->Reg[1]);
 		return true;
@@ -848,6 +860,23 @@ void emu_step(void)
 }
 
 /* ---- The rest of the machine as src/ sees it ---- */
+
+/* A CMOS RAM with a desktop mode and monitor type of its own in place of Auto, and its checksum
+   made again: 1 and the rest of its bytes added up, at physical &3F. Logical location n is at
+   physical n + &40, and &C0 to &EF at &10 to &3F. */
+void machine_cmos_desktop(uint8_t *c, int mode, int monitor)
+{
+	int i, sum = 1;
+
+	c[0x13] &= ~0x10;                       /* &C3, bit 4: the Wimp mode isn't Auto */
+	c[0x14] = (uint8_t)mode;                /* &C4: the Wimp mode */
+	c[0xc5] = (uint8_t)(monitor << 2 | (c[0xc5] & 0x02));   /* &85: the monitor type, with separate syncs */
+	for (i = 0x10; i < 0x3f; i++)
+		sum += c[i];
+	for (i = 0x40; i < 0x100; i++)
+		sum += c[i];
+	c[0x3f] = (uint8_t)sum;
+}
 
 int machine_disc(int drive, const char *path, int write_protect)
 {

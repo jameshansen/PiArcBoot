@@ -464,32 +464,45 @@ static int draw_classics(int x, int y, int w)
 
 	for (s = 0; s < CLASSIC_SECTIONS; s++)
 	{
-		int any = 0;
+		int any = 0, pass;
 
 		rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), sections[s].title);
 		y += 26;
 		y += credit(x + 2, y + 4, w - 4, sections[s].lead, sections[s].name, sections[s].url);
-		for (i = 0; i < classic_count(); i++)
+		for (pass = 0; pass < 2; pass++)        /* the section's installed games, then the rest */
 		{
-			const classic_t *c = classic_entry(i);
-			game_t *g = installed(c->id);
-			int hit;
+			int head = 0;
 
-			if (c->section != s)
-				continue;
-			any = 1;
-			hit = draw_row(x, y, w, icon_for(c->id, g), g ? g->title : c->title, g ? g->info : c->info, g, g != NULL);
-			if (hit == 1 && g)
-				play(g);
-			else if (hit == 1)
+			for (i = 0; i < classic_count(); i++)
 			{
-				dlg_classic_entry = *c;
-				dlg_classic = 1;
-				dlg = DLG_INSTALL;
+				const classic_t *c = classic_entry(i);
+				game_t *g = installed(c->id);
+				int hit;
+
+				if (c->section != s || (g != NULL) != (pass == 0))
+					continue;
+				if (!head)
+				{
+					rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), pass ? "Available" : "Installed");
+					y += 30;
+					head = 1;
+				}
+				any = 1;
+				hit = draw_row(x, y, w, icon_for(c->id, g), g ? g->title : c->title, g ? g->info : c->info, g, g != NULL);
+				if (hit == 1 && g)
+					play(g);
+				else if (hit == 1)
+				{
+					dlg_classic_entry = *c;
+					dlg_classic = 1;
+					dlg = DLG_INSTALL;
+				}
+				else if (hit == 2)
+					open_settings(g);
+				y += ROW_H + 8;
 			}
-			else if (hit == 2)
-				open_settings(g);
-			y += ROW_H + 8;
+			if (head)
+				y += 4;
 		}
 		if (!any)
 		{

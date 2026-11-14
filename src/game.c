@@ -1,9 +1,10 @@
 /* The game window: one game, booted hands-free and shown in a window with the system's menu bar.
 
    A game starts behind a splash screen. The machine is run as fast as the host allows while a
-   script holds Shift for a disc that boots, or opens the command line and runs the game's
+   script holds Shift for a disc that boots, or ROO311's HostLink module runs the game's
    application for one that doesn't, and the splash gives way to the picture once the game has
-   put up a screen of its own. From there the machine runs in real time.
+   put up a screen of its own, so the desktop is never seen. From there the machine runs in real
+   time.
 
    The Game menu has full screen and the three window sizes. Switch Floppy, there only for a game
    with more than one disc, changes the disc in the drive, and an auto switch point remembers the
@@ -260,7 +261,7 @@ static void set_capture(int on)
 	SDL_SetRelativeMouseMode(on ? SDL_TRUE : SDL_FALSE);
 	if (on && !told_capture)
 	{
-		notify("The mouse belongs to the game now. Escape frees it.");
+		notify("Press ESC to release mouse");
 		told_capture = 1;
 	}
 }
@@ -460,73 +461,92 @@ static void draw_splash(int done, int total)
 /* The keys and steps that start the game, and how long they take in centiseconds. A disc that
    boots gets Shift held until the disc is first read, a little over a second in, and no longer: some games
    set the machine up and reset it, and Shift held at a reset tells RISC OS not to boot. Any
-   other disc gets the command line once the desktop has settled (its banner is gone 9.3 seconds
-   in), the disc's root opened as a double-click would, and the application run. */
-/* A game from the Classics tab is started by ROO311's HostLink module once the desktop is up, as a
-   double-click would, and its icon on the icon bar is then clicked for it, every 2 seconds until
-   the icon is there or 6 tries have found none (a game that opens a window of its own has none) */
-static int click_at = -1, click_tries, modes_at_click = -1, clicked_cs;
-
-static void classic_clicks(int cs)
+   other disc has its root opened and its application run by HostLink once the desktop is up, as
+   a double-click would. */
+/* A game that starts from an application on its disc is started by ROO311's HostLink module, as
+   a double-click would, with no command line opened over the desktop: a Classics game as soon as
+   the desktop is up, a JASPP game once it has settled (its banner is gone 9.3 seconds in). From
+   there HostLink says what the game does. It changes screen mode when it takes the screen, opens
+   an error box when it asks the person something (a disc to put in, say), or starts as a task in
+   the desktop, and then its icon on the icon bar is clicked for it, up to 3 times 2 seconds apart
+   for an icon that comes a little later. A game that sets the video controller up itself, without
+   telling RISC OS, has taken the screen when the controller is set up. */
+static struct
 {
-	if (click_at < 0 || cs < click_at)
-		return;
-	if (emu_host_clicked)
-	{
-		click_at = -1;
-		modes_at_click = emu_host_modes;
-		clicked_cs = cs;
-	}
-	else if (click_tries++ < 6)
-	{
-		emu_host_click(game.boot);
-		click_at = cs + 200;
-	}
-	else
-		click_at = -1;
-	if (click_at < 0)               /* the game is going: the disc's directory, opened to start it, goes */
-		emu_host_run("Filer_CloseDir adfs::0.$");
+	int run_at, started, ready, clicked, missed, tries, click_at;
+} app = { -1 };
+
+static void start_app(void)
+{
+	char text[512];
+
+	app.started = 1;
+	app.clicked = emu_host_clicked;
+	app.missed = emu_host_missed;
+	emu_host_run("Filer_OpenDir adfs::0.$");
+	snprintf(text, sizeof text, "Filer_Run adfs::0.$.%s", game.boot);
+	emu_host_run(text);
 }
 
-/* Whether a Classics game has got going: a game that takes the screen has changed mode since
-   HostLink started it or its icon was clicked, one that plays in the desktop has had 3 seconds to
-   open its window, and one with no icon to click has stopped loading */
-static int classic_ready(int cs)
+/* Acts on what HostLink has said since the game was started */
+static void app_events(int cs)
 {
-	if (emu_host_modes_at_run >= 0 && (emu_host_modes > emu_host_modes_at_run || machine_mode_sets > emu_host_vidc_at_run))
-		return 1;
-	if (modes_at_click >= 0)
-		return emu_host_modes > modes_at_click || cs > clicked_cs + 300;
-	return click_at < 0 && !machine_motor_on();
+	if (app.run_at >= 0 && cs >= app.run_at)
+	{
+		app.run_at = -1;
+		start_app();
+	}
+	if (!app.started || app.ready)
+		return;
+	/* since HostLink started it, it has taken the screen or asked the person something */
+	if (emu_host_modes_at_run >= 0 && (emu_host_modes > emu_host_modes_at_run || emu_host_errors > emu_host_errors_at_run ||
+					   machine_mode_sets > emu_host_vidc_at_run))
+	{
+		app.ready = 1;
+		emu_host_forget();              /* nothing left over to send when it ends */
+		return;
+	}
+	if (emu_host_tasks_at_run < 0 || emu_host_tasks <= emu_host_tasks_at_run)   /* not yet a task in the desktop */
+		return;
+	if (emu_host_clicked > app.clicked)
+	{
+		if (game.classic)               /* a desktop game, going; a JASPP game takes the screen or asks for a disc next */
+		{
+			app.ready = 1;
+			emu_host_run("Filer_CloseDir adfs::0.$");
+		}
+		return;
+	}
+	if (app.tries == 0 || (emu_host_missed > app.missed && cs >= app.click_at))
+	{
+		if (app.tries == 3)             /* no icon to click: it plays in a window of its own */
+		{
+			app.ready = 1;
+			emu_host_run("Filer_CloseDir adfs::0.$");
+			return;
+		}
+		app.missed = emu_host_missed;
+		app.tries++;
+		app.click_at = cs + 200;
+		emu_host_click(game.boot);
+	}
 }
 
 static int boot_script(void)
 {
-	char text[512];
-
 	if (!game.boot[0])
 	{
 		emu_script("key shift down\nuntilread 600\nkey shift up\n");
 		return 270;
 	}
-	if (game.classic)
-	{
-		emu_host_run("Filer_OpenDir adfs::0.$");
-		snprintf(text, sizeof text, "Filer_Run adfs::0.$.%s", game.boot);
-		emu_host_run(text);
-		click_at = 1000;
-		return 1500;
-	}
-	snprintf(text, sizeof text, "wait 1200\nkey f12 down\nwait 10\nkey f12 up\nwait 100\n"
-		 "type *Filer_OpenDir adfs::0.$\\n\nwait 100\ntype *Filer_Run adfs::0.$.%s\\n\nwait 50\ntype \\n\n", game.boot);
-	emu_script(text);
-	return 1200 + 14 + 100 + 28 * 11 + 100 + (int)(24 + strlen(game.boot)) * 11 + 50 + 11;
+	app.run_at = game.classic ? 0 : 1000;
+	return game.classic ? 1500 : 1300;
 }
 
 int game_main(const char *id, const char *test_script)
 {
 	char path[1024], cls[160], rom[1024];
-	uint8_t icon[128 * 128 * 4];
+	uint8_t icon[128 * 128 * 4], cmos[256];
 	int booting = 1, script_cs, cs = 0, script_end = -1, settle = -1, modes_at_read = 0, last_check = 0, w, h, quit = 0, i;
 	int run_for = getenv("PIARCBOOT_RUN_FOR") ? atoi(getenv("PIARCBOOT_RUN_FOR")) : 0, lost = 0, shown_cs = 0;
 	menu_item_t items[MAX_ITEMS], bar_items[MAX_ITEMS];
@@ -561,7 +581,6 @@ int game_main(const char *id, const char *test_script)
 	n_items = menu_items(bar_items);
 	if (native_bar)
 		menubar_set(bar_items, n_items);
-	fit_window();                   /* room for the menu bar above the picture */
 	SDL_SetWindowMinimumSize(rg_win, rg_to_window(320 * pic_scale()), rg_to_window(200 * pic_scale() + bar_px()));
 	fit_window();
 	icon_tex = rg_image_texture(icon, 128, 128, 1);
@@ -569,7 +588,10 @@ int game_main(const char *id, const char *test_script)
 		set_fullscreen(1);
 
 	machine_fixed_time = test_script != NULL;
-	if (emu_start(rom, default_cmos, game.fdc))
+	memcpy(cmos, default_cmos, sizeof cmos);
+	if (game.classic)               /* a 640 by 512 desktop in 256 colours, mode 21 on a multisync monitor, for the games that play in it */
+		machine_cmos_desktop(cmos, 21, 1);
+	if (emu_start(rom, cmos, game.fdc))
 	{
 		fprintf(stderr, "piarcboot: the ROM image %s can't be read\n", rom);
 		return 1;
@@ -691,7 +713,7 @@ int game_main(const char *id, const char *test_script)
 			{
 				emu_step();
 				cs++;
-				classic_clicks(cs);
+				app_events(cs);
 				/* The splash comes down once the keys have all been pressed and the game has
 				   either put up a screen of its own since it began to load, or stopped loading */
 				if (!modes_at_read && machine_disc_reads)
@@ -700,10 +722,10 @@ int game_main(const char *id, const char *test_script)
 				{
 					if (script_end < 0)
 						script_end = cs;
-					if (settle < 0 && (game.classic ? classic_ready(cs) :
+					if (settle < 0 && (game.boot[0] ? app.ready :
 							   modes_at_read && (machine_mode_sets >= modes_at_read || !machine_motor_on())))
 						settle = cs + 15;
-					if ((settle >= 0 && cs >= settle) || cs > script_end + (game.classic ? 6000 : 3000))   /* a Classics game says when it has started */
+					if ((settle >= 0 && cs >= settle) || cs > script_end + (game.boot[0] ? 6000 : 3000))
 					{
 						if (test_script)
 							fprintf(stderr, "picture shown at %d cs%s\n", cs, settle < 0 ? " (it never set a mode or stopped loading)" : "");
@@ -742,7 +764,7 @@ int game_main(const char *id, const char *test_script)
 			{
 				emu_step();
 				cs++;
-				classic_clicks(cs);
+				app_events(cs);
 			}
 			if (due <= 0)
 				SDL_Delay(1);
