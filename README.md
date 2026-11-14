@@ -52,8 +52,6 @@ Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 2
 
 ### Not yet
 
-- This version hasn't yet been played by hand in a window on the Pi's own screen or on Windows, its sound hasn't been listened to, and no game has been played through
-- APD images aren't read
 - Games that run inside the RISC OS desktop aren't listed, and joysticks aren't supported
 - Champions installs with 3 of its 5 discs, the ones JASPP's package has
 - DarkWood, which needs a Risc PC, Phaethon, which needs two drives, and Star Fighter 3000 aren't in Classics, nor are PackMan games that need more than RISC OS 3.11 has
