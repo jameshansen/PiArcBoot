@@ -228,7 +228,7 @@ GitHub Actions builds PiArcBoot on every push: on an ARM runner for the Raspberr
 
 ## Pi Projects
 
-PiArcBoot is one of five projects for the Raspberry Pi. One is a utility for the desktop, and four bring favourite old games to the Pi.
+PiArcBoot is one of five projects for the Raspberry Pi. One is a utility for the desktop, and four bring favourite old games to the Pi with the same kind of installer.
 
 | Project | What it is |
 | --- | --- |
