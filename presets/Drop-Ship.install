@@ -1,0 +1,4 @@
+# What Drop Ship's Hard Disc Installer copies: the game from disc 1, and the stages on disc 2 into
+# its folder. The # is the hard space in the game's name.
+copy 1 $.!Drop#Ship $.!Drop Ship
+copy 2 $.!Stages $.!Drop Ship.!Stages

@@ -16,8 +16,8 @@ It joins 5 sources:
     of package name, game number and count, as tests/floppies.sh makes it.
 
 A game goes in the table when the README has it green, or names it among the extra packages that
-reach the same screen as RISC OS 3.11, unless it is one that runs in the desktop and not full
-screen. A game with no floppy image in its package or its release folder is left out too, since
+reach the same screen as RISC OS 3.11. Those that play in the desktop are shown cropped to their
+windows, as their presets say (presets/README.md). A game with no floppy image in its package or its release folder is left out too, since
 there is nothing to boot it from. Every other package in the feed is listed by name only, so the
 launcher can tell a package it has left out from one JASPP has added since.
 """
@@ -87,7 +87,7 @@ def main():
             exact = [n for n in same if tag(n) == tag(title)]
             name = (exact or (same if len(same) == 1 else [n for n in same if not tag(n)]) or [None])[0]
         assert name in feed, title
-        if status == "\U0001F7E2" and "then desktop" not in starts:     # games that run in the desktop are left for later
+        if status == "\U0001F7E2":
             chosen[name] = (title, year)
     for name in EXTRA:
         d = feed[name]["Description"]

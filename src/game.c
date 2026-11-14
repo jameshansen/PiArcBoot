@@ -33,6 +33,8 @@ static int cur_disc;
 static SDL_Texture *pic, *big, *icon_tex;        /* the picture, and the picture enlarged a whole number of times */
 static int pic_w, pic_h, big_w, big_h;
 static int fullscreen, captured, told_capture;
+static int crop, crop_fitted;           /* just the windows on the screen are shown; the window has been fitted to them */
+static int crop_from, now_cs;           /* the centisecond cropping starts, a second after the game is going; the machine's now */
 static int native_bar;                  /* the window has a menu bar of the system's own making */
 static int fit_w, fit_h;                /* the size the window was last given for a size in the menu */
 static int kept_w, kept_h;              /* and its size before it went full screen */
@@ -41,7 +43,7 @@ static int kept_w, kept_h;              /* and its size before it went full scre
 #define MAX_ITEMS (MAX_DISCS + 8)
 static const char *const menu_titles[MENUS] = { "Game", "Switch Floppy" };
 static int n_menus = MENUS;             /* 1 for a game with one disc: no Switch Floppy */
-enum { CMD_FULLSCREEN = 1, CMD_SCALE, CMD_CLOSE = CMD_SCALE + 4, CMD_SET_SWAP, CMD_CLEAR_SWAPS, CMD_SEND_ESC, CMD_DISC };
+enum { CMD_FULLSCREEN = 1, CMD_SCALE, CMD_CLOSE = CMD_SCALE + 4, CMD_SET_SWAP, CMD_CLEAR_SWAPS, CMD_SEND_ESC, CMD_CROP, CMD_DISC };
 static char note[160];
 static Uint32 note_until;
 static swap_t swaps[MAX_SWAPS];
@@ -205,10 +207,42 @@ static int pic_scale(void)
 	return rg_scale < 1.5f ? 1 : (int)(rg_scale + 0.5f);
 }
 
+/* The part of the picture shown, in its pixels: all of it, or for a game cropped to its windows,
+   the least that holds every window on the screen, as ROO311's HostLink says where they are,
+   leaving out the desktop's backdrop. That starts once the game is going and the folder it was
+   started from has had time to close. A window wholly off the screen is hidden, so it is left
+   out too. With no windows the picture is shown whole. */
+static SDL_Rect view(void)
+{
+	SDL_Rect v = { 0, 0, emu_w, emu_h };
+	int ys = emu_dbl ? 4 : 2, sh = emu_h * ys, x0 = 1280, y0 = sh, x1 = 0, y1 = 0, i;
+
+	for (i = 0; crop && crop_from && now_cs >= crop_from && i < emu_host_nwins; i++)
+	{
+		const int *w = emu_host_wins[i];
+		int a = w[0] > 0 ? w[0] : 0, b = w[1] > 0 ? w[1] : 0, c = w[2] < 1280 ? w[2] : 1280, d = w[3] < sh ? w[3] : sh;
+
+		if (c <= a || d <= b)
+			continue;
+		x0 = a < x0 ? a : x0;
+		y0 = b < y0 ? b : y0;
+		x1 = c > x1 ? c : x1;
+		y1 = d > y1 ? d : y1;
+	}
+	if (x1 - x0 < 32 || y1 - y0 < 32)
+		return v;
+	v.x = x0 * emu_w / 1280;
+	v.w = (x1 * emu_w + 1279) / 1280 - v.x;
+	v.y = emu_h - (y1 + ys - 1) / ys;
+	v.h = emu_h - y0 / ys - v.y;
+	return v;
+}
+
 /* The window's size in real pixels for a scale of 1 to 3: the picture, with the menu bar above it */
 static void window_size(int *w, int *h)
 {
-	int dw = emu_w > 0 ? emu_w : 640, dh = emu_h > 0 ? (emu_dbl ? emu_h * 2 : emu_h) : 512;
+	SDL_Rect v = view();
+	int dw = emu_w > 0 ? v.w : 640, dh = emu_h > 0 ? (emu_dbl ? v.h * 2 : v.h) : 512;
 
 	*w = dw * game.scale / 2 * pic_scale();
 	*h = dh * game.scale / 2 * pic_scale() + bar_px();
@@ -223,12 +257,37 @@ static int own_size(void)
 	return w != fit_w || h != fit_h;
 }
 
+/* The window's size in its own units for a picture that size in real pixels, and no smaller than
+   it is allowed to be, so that it is the size it is given */
+static void window_units(int *w, int *h)
+{
+	int min_w = 320 * pic_scale(), min_h = 200 * pic_scale() + bar_px();
+
+	*w = rg_to_window(*w > min_w ? *w : min_w);
+	*h = rg_to_window(*h > min_h ? *h : min_h);
+}
+
 /* Gives the window the size the menu's scale asks for */
 static void fit_window(void)
 {
 	window_size(&fit_w, &fit_h);
-	fit_w = rg_to_window(fit_w);
-	fit_h = rg_to_window(fit_h);
+	window_units(&fit_w, &fit_h);
+	SDL_SetWindowSize(rg_win, fit_w, fit_h);
+}
+
+/* For a game cropped to its windows, a window made bigger at the menu's scale when the game's
+   windows have outgrown it. It never shrinks, so a menu or a box that comes and goes leaves it
+   as it was. */
+static void grow_window(void)
+{
+	int w, h;
+
+	window_size(&w, &h);
+	window_units(&w, &h);
+	if (w <= fit_w && h <= fit_h)
+		return;
+	fit_w = w > fit_w ? w : fit_w;
+	fit_h = h > fit_h ? h : fit_h;
 	SDL_SetWindowSize(rg_win, fit_w, fit_h);
 }
 
@@ -268,10 +327,14 @@ static void set_capture(int on)
 
 /* Where the picture goes, in real pixels: the largest that keeps its shape in the window below
    the menu bar, or on the whole screen when full screen, with black around it. Full screen keeps
-   to a whole multiple of the 1x size, and so does a window within a hair of one. */
+   to a whole multiple of the 1x size, and so does a window within a hair of one. A picture cropped
+   to the game's windows keeps its pixels no bigger than the whole picture's would be there, or
+   than the menu's scale makes them, so a small window of the game's isn't blown up. */
 static void picture_rect(SDL_Rect *r, double *zoom)
 {
-	int ow, oh, top, dw = emu_w, dh = emu_dbl ? emu_h * 2 : emu_h, k;
+	SDL_Rect v = view();
+	int ow, oh, top, dw = v.w, dh = emu_dbl ? v.h * 2 : v.h, fh = emu_dbl ? emu_h * 2 : emu_h, k;
+	double most;
 
 	SDL_GetRendererOutputSize(rg_ren, &ow, &oh);
 	top = fullscreen ? 0 : bar_px();
@@ -282,6 +345,17 @@ static void picture_rect(SDL_Rect *r, double *zoom)
 	{
 		r->h = oh;
 		r->w = (int)((Sint64)oh * dw / dh);
+	}
+	if (v.w < emu_w || v.h < emu_h)
+	{
+		most = (double)ow / emu_w < (double)oh / fh ? (double)ow / emu_w : (double)oh / fh;
+		if (most < game.scale * pic_scale() / 2.0)
+			most = game.scale * pic_scale() / 2.0;
+		if (r->w > dw * most)
+		{
+			r->w = (int)(dw * most);
+			r->h = (int)(dh * most);
+		}
 	}
 	k = r->w * 2 / dw;
 	if (k >= 1 && (fullscreen || r->w - dw * k / 2 < 8))
@@ -305,7 +379,7 @@ static void picture_rect(SDL_Rect *r, double *zoom)
    columns and smoothing alone blurs everything. */
 static void draw_picture(void)
 {
-	SDL_Rect src = { 0, 0, emu_w, emu_h }, dst;
+	SDL_Rect all = { 0, 0, emu_w, emu_h }, src = view(), dst;
 	SDL_RendererInfo info;
 	double zoom;
 	int tx, ty;
@@ -322,12 +396,20 @@ static void draw_picture(void)
 		if (!fullscreen && !own_size())
 			fit_window();           /* the game changed screen mode, and the window follows */
 	}
-	SDL_UpdateTexture(pic, &src, emu_fb, EMU_FB_W * 4);
+	if (crop && (src.w < emu_w || src.h < emu_h) && !fullscreen && !own_size())
+	{
+		if (!crop_fitted)
+			fit_window();           /* the window takes the shape of the game's windows when they first come */
+		else
+			grow_window();
+		crop_fitted = 1;
+	}
+	SDL_UpdateTexture(pic, &all, emu_fb, EMU_FB_W * 4);
 	picture_rect(&dst, &zoom);
 	if (dst.w < 1 || dst.h < 1)
 		return;
 	SDL_SetTextureScaleMode(pic, SDL_ScaleModeNearest);
-	if (dst.w % emu_w == 0 && dst.h % emu_h == 0)
+	if (dst.w % src.w == 0 && dst.h % src.h == 0)
 	{
 		SDL_RenderCopy(rg_ren, pic, &src, &dst);
 		return;
@@ -335,23 +417,23 @@ static void draw_picture(void)
 
 	/* How many whole times larger to make it first, each way: as many as fit in its place
 	   and in a texture */
-	tx = dst.w / emu_w > 1 ? dst.w / emu_w : 1;
-	ty = dst.h / emu_h > 1 ? dst.h / emu_h : 1;
+	tx = dst.w / src.w > 1 ? dst.w / src.w : 1;
+	ty = dst.h / src.h > 1 ? dst.h / src.h : 1;
 	if (!SDL_GetRendererInfo(rg_ren, &info) && info.max_texture_width > 0 && info.max_texture_height > 0)
 	{
-		while (tx > 1 && emu_w * tx > info.max_texture_width)
+		while (tx > 1 && src.w * tx > info.max_texture_width)
 			tx--;
-		while (ty > 1 && emu_h * ty > info.max_texture_height)
+		while (ty > 1 && src.h * ty > info.max_texture_height)
 			ty--;
 	}
 	if (tx > 1 || ty > 1)
 	{
-		if (!big || big_w != emu_w * tx || big_h != emu_h * ty)
+		if (!big || big_w != src.w * tx || big_h != src.h * ty)
 		{
 			if (big)
 				SDL_DestroyTexture(big);
-			big_w = emu_w * tx;
-			big_h = emu_h * ty;
+			big_w = src.w * tx;
+			big_h = src.h * ty;
 			big = SDL_CreateTexture(rg_ren, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_TARGET, big_w, big_h);
 			if (big)
 				SDL_SetTextureScaleMode(big, SDL_ScaleModeLinear);
@@ -379,6 +461,7 @@ static int menu_items(menu_item_t *it)
 	ITEM(0, CMD_FULLSCREEN, fullscreen, 0, "Fullscreen");
 	for (i = 1; i <= 3; i++)
 		ITEM(0, CMD_SCALE + i, !fullscreen && game.scale == i && !own_size(), 0, "%dx Scale", i);
+	ITEM(0, CMD_CROP, crop, 1, "Windows Only");
 	ITEM(0, CMD_CLOSE, 0, 1, "Close");
 	ITEM(0, CMD_SEND_ESC, 0, 1, "Send ESC");
 	for (i = 0; i < game.ndiscs; i++)
@@ -421,6 +504,15 @@ static int menu_command(int cmd)
 		n_swaps = swap_pending = 0;
 		swaps_save();
 		notify("This game's auto switch points are cleared.");
+	}
+	else if (cmd == CMD_CROP)               /* just the game's windows, or the whole screen, kept for next time */
+	{
+		game.crop = crop = !crop;
+		crop_fitted = 0;
+		set_capture(0);
+		if (!fullscreen && !crop)
+			fit_window();
+		store_save(&game);
 	}
 	else if (cmd == CMD_SEND_ESC)           /* Escape on the keyboard frees the mouse, so the machine gets it from here */
 		emu_script("key esc down\nwait 5\nkey esc up\n");
@@ -474,6 +566,10 @@ static void draw_splash(int done, int total)
 static struct
 {
 	int run_at, started, ready, clicked, missed, tries, click_at;
+	int mode;               /* the screen mode its presets give the desktop, for a game that plays in it, or 0 */
+	int task_at;            /* when it became a task in the desktop, or 0 */
+	int drive_at;           /* when the floppy drive last turned */
+	int keyed;              /* the keys its presets name have been pressed */
 } app = { -1 };
 
 /* Where the game's application is: the floppy in drive 0, or the HostFS folder of a game with a
@@ -516,28 +612,41 @@ static void start_app(void)
 	emu_host_run(text);
 }
 
-/* The game is going. The keys its presets name (keys=, by the names test scripts use) are pressed
-   for it now, behind the splash, for a choice the game doesn't keep from one time to the next. */
-static void app_ready(int close)
+/* The keys a game's presets name (keys=, by the names test scripts use), pressed behind the splash
+   for a choice the game doesn't keep from one time to the next: once the game is going, or for
+   one that plays in the desktop, once it has loaded and before its icon is clicked, to answer a
+   question that comes first. They wait a second first, as a box that has just opened doesn't
+   take keys yet. */
+static int press_keys(void)
 {
-	char keys[120], text[600];
+	char keys[120], text[600] = "wait 100\n";
 	char *k;
-	size_t used = 0;
+	size_t used = strlen(text);
 
-	app.ready = 1;
-	if (close)
-		close_root();
-	if (!preset_setting(game.id, "keys", keys, sizeof keys))
-		return;
+	if (app.keyed++ || !preset_setting(game.preset[0] ? game.preset : game.id, "keys", keys, sizeof keys))
+		return 0;
 	for (k = strtok(keys, " "); k && used + 80 < sizeof text; k = strtok(NULL, " "))
 		used += (size_t)snprintf(text + used, sizeof text - used, "key %s down\nwait 5\nkey %s up\nwait 10\n", k, k);
 	snprintf(text + used, sizeof text - used, "wait 50\n");
 	emu_script(text);
+	return 1;
+}
+
+/* The game is going */
+static void app_ready(int close)
+{
+	app.ready = 1;
+	if (close)
+		close_root();
+	press_keys();
 }
 
 /* Acts on what HostLink has said since the game was started */
 static void app_events(int cs)
 {
+	now_cs = cs;
+	if (app.ready && !crop_from)
+		crop_from = cs + 100;
 	if (app.run_at >= 0 && cs >= app.run_at)
 	{
 		app.run_at = -1;
@@ -545,9 +654,11 @@ static void app_events(int cs)
 	}
 	if (!app.started || app.ready)
 		return;
-	/* since HostLink started it, it has taken the screen or asked the person something */
-	if (emu_host_modes_at_run >= 0 && (emu_host_modes > emu_host_modes_at_run || emu_host_errors > emu_host_errors_at_run ||
-					   machine_mode_sets > emu_host_vidc_at_run))
+	/* since HostLink started it, it has taken the screen or asked the person something. A game
+	   whose presets give the desktop a mode plays in the desktop, and setting that mode again for
+	   its loading screen isn't taking the screen. */
+	if (emu_host_modes_at_run >= 0 && (emu_host_errors > emu_host_errors_at_run ||
+					   (!app.mode && (emu_host_modes > emu_host_modes_at_run || machine_mode_sets > emu_host_vidc_at_run))))
 	{
 		emu_host_forget();              /* nothing left over to send when it ends */
 		app_ready(0);
@@ -557,10 +668,23 @@ static void app_events(int cs)
 		return;
 	if (emu_host_clicked > app.clicked)
 	{
-		if (game.classic || game.apps)  /* a desktop game, going; a JASPP game takes the screen or asks for a disc next */
+		if (game.classic || game.apps || app.mode)      /* a desktop game, going; a JASPP game takes the screen or asks for a disc next */
 			app_ready(1);
 		return;
 	}
+	/* A game that plays in the desktop in its own mode may put its icon up before it looks for a
+	   click on it, and go on loading from its disc, so it is clicked once it has had 2 seconds and
+	   the drive has been still for 1, or after 30 seconds whatever it is doing */
+	if (!app.task_at)
+		app.task_at = cs;
+	if (machine_motor_on())
+		app.drive_at = cs;
+	if (app.tries == 0 && app.mode && cs < app.task_at + 3000 && (cs < app.task_at + 200 || cs < app.drive_at + 100))
+		return;
+	if (app.tries == 0 && app.mode && !app.keyed && press_keys())
+		app.click_at = cs + 200;        /* and its icon clicked once they have had time to answer */
+	if (app.tries == 0 && app.mode && (cs < app.click_at || emu_script_busy()))
+		return;
 	if (app.tries == 0 || (emu_host_missed > app.missed && cs >= app.click_at))
 	{
 		if (app.tries == 3)             /* no icon to click: it plays in a window of its own */
@@ -597,6 +721,7 @@ int game_main(const char *id, const char *test_script)
 	Uint64 freq, start, began, shown = 0;
 	size_t n;
 
+	deploy_installed(id);           /* a game its installer put on HostFS starts from a fresh copy if its own is gone */
 	store_game_path(id, "hostfs", hostfs, sizeof hostfs);
 	if (store_load(id, &game) || (!game.ndiscs && !is_dir(hostfs)))         /* discs, or a HostFS folder */
 	{
@@ -635,6 +760,16 @@ int game_main(const char *id, const char *test_script)
 	memcpy(cmos, default_cmos, sizeof cmos);
 	if (game.classic || game.apps)  /* a 640 by 512 desktop in 256 colours, mode 21 on a multisync monitor, for the games that play in it */
 		machine_cmos_desktop(cmos, 21, 1);
+	crop = game.crop >= 0 ? game.crop : preset_setting(game.preset[0] ? game.preset : game.id, "crop", path, sizeof path) && atoi(path);
+	/* The desktop in the screen mode a game's presets name, for one that asks for a mode, and
+	   otherwise for a game shown cropped to its windows, which plays in the desktop, the Classics'
+	   640 by 512 in 256 colours */
+	if (preset_setting(game.preset[0] ? game.preset : game.id, "mode", path, sizeof path))
+		app.mode = atoi(path);
+	else if (crop)
+		app.mode = 21;
+	if (app.mode > 0)
+		machine_cmos_desktop(cmos, app.mode, 1);
 	/* A game with a support pack has modules in an extension ROM, which RISC OS takes up at power on
 	   in place of older ones of the same name, and a folder of the computer's own as HostFS */
 	store_game_path(game.id, "extrom", extrom, sizeof extrom);
@@ -723,20 +858,20 @@ int game_main(const char *id, const char *test_script)
 		if (test_script)
 			quit |= rg_test_step(cs, &shot, &drop);
 
-		/* A click on the picture gives the game the mouse. A game set not to capture it has the
-		   RISC OS pointer put where the host's is over the picture, by ROO311's HostLink, and the
-		   buttons pressed there. */
-		if (game.nocapture && emu_hostlink)
+		/* A click on the picture gives the game the mouse. A game set not to capture it, or shown
+		   cropped to its windows, has the RISC OS pointer put where the host's is over the picture,
+		   by ROO311's HostLink, and the buttons pressed there. */
+		if ((game.nocapture || crop) && emu_hostlink)
 		{
-			SDL_Rect r;
+			SDL_Rect r, v = view();
 			double zoom;
 			int px, py, over;
 			Uint32 b;
 
 			picture_rect(&r, &zoom);
-			px = (int)((rg_in.x * rg_scale - r.x) / zoom);
-			py = (int)((rg_in.y * rg_scale - r.y) / zoom) / (emu_dbl ? 2 : 1);
-			over = !booting && rg_in.x >= 0 && px >= 0 && px < emu_w && py >= 0 && py < emu_h;
+			px = v.x + (int)((rg_in.x * rg_scale - r.x) / zoom);
+			py = v.y + (int)((rg_in.y * rg_scale - r.y) / zoom) / (emu_dbl ? 2 : 1);
+			over = !booting && rg_in.x >= 0 && px >= v.x && px < v.x + v.w && py >= v.y && py < v.y + v.h;
 			if (over)       /* the usual modes are 1280 OS units across, and 2 a line, or 4 a doubled one */
 				emu_host_pointer(px * 1280 / emu_w, (emu_h - 1 - py) * (emu_dbl ? 4 : 2));
 			b = over ? SDL_GetMouseState(NULL, NULL) : 0;
@@ -753,7 +888,7 @@ int game_main(const char *id, const char *test_script)
 			mouse_fy -= dy;
 			emu_mouse(dx, dy, (b & SDL_BUTTON_LMASK ? 1 : 0) | (b & SDL_BUTTON_RMASK ? 2 : 0) | (b & SDL_BUTTON_MMASK ? 4 : 0));
 		}
-		else if (!(game.nocapture && emu_hostlink))
+		else if (!((game.nocapture || crop) && emu_hostlink))
 			emu_mouse(0, 0, 0);
 
 		/* Run the machine: flat out behind the splash and in the tests, in real time otherwise */
@@ -767,17 +902,18 @@ int game_main(const char *id, const char *test_script)
 				cs++;
 				app_events(cs);
 				/* The splash comes down once the keys have all been pressed and the game has
-				   either put up a screen of its own since it began to load, or stopped loading */
+				   either put up a screen of its own since it began to load, or stopped loading,
+				   and for a game cropped to its windows once the cropping has started */
 				if (!modes_at_read && machine_disc_reads)
 					modes_at_read = machine_mode_sets + 1;
 				if (booting && !emu_script_busy())
 				{
 					if (script_end < 0)
 						script_end = cs;
-					if (settle < 0 && (game.boot[0] ? app.ready && !emu_script_busy() :
+					if (settle < 0 && (game.boot[0] ? app.ready && !emu_script_busy() && (!crop || (crop_from && cs >= crop_from)) :
 							   modes_at_read && (machine_mode_sets >= modes_at_read || !machine_motor_on())))
 						settle = cs + 15;
-					if ((settle >= 0 && cs >= settle) || cs > script_end + (game.boot[0] ? 6000 : 3000))
+					if ((settle >= 0 && cs >= settle) || cs > script_end + (game.boot[0] ? (app.mode ? 9000 : 6000) : 3000))
 					{
 						if (test_script)
 							fprintf(stderr, "picture shown at %d cs%s\n", cs, settle < 0 ? " (it never set a mode or stopped loading)" : "");

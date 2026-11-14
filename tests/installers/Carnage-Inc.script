@@ -1,0 +1,48 @@
+# Carnage Inc's hard disc installer, worked as a person would. Its window asks where to
+# install to, which is HostFS's root, and then it asks for its other discs.
+wait 1800
+run Filer_Run adfs::0.$.!Install
+wait 600
+# a click in the Destination Directory field, Ctrl-U to clear it and HostFS's root typed in
+pointer 660 556
+wait 20
+button l down
+wait 5
+button l up
+wait 20
+key ctrl down
+wait 5
+key u down
+wait 5
+key u up
+wait 5
+key ctrl up
+wait 10
+type HostFS:$
+wait 20
+# then Install
+pointer 660 476
+wait 20
+button l down
+wait 5
+button l up
+# disc 2 when it asks, and OK once the drive has stopped, as ADFS only looks for
+# another disc when it starts the drive again
+untilerror 12000
+wait 500
+disc 0 2
+wait 50
+key return down
+wait 5
+key return up
+# disc 3 when it asks, and OK once the drive has stopped, as ADFS only looks for
+# another disc when it starts the drive again
+untilerror 12000
+wait 500
+disc 0 3
+wait 50
+key return down
+wait 5
+key return up
+# done once the drive has been still for 10 seconds
+untilidle 1000 60000

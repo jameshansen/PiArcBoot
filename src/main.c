@@ -13,6 +13,10 @@
      piarcboot list                              the game table
      piarcboot checknew                          note which games new to the feed have floppy images
      piarcboot classic [<game>]                  install a game from the Classics list, or list them
+     piarcboot install <game>                    install a game from the JASPP list
+     piarcboot add <files>                       add a game from disc images or archives
+     piarcboot ls <image>                        the files on a disc image
+     piarcboot extract <file> <folder>           the files in an archive or a disc image, named as HostFS names them
      piarcboot check                             the self-tests */
 #include <ctype.h>
 #include <stdio.h>
@@ -26,17 +30,22 @@
 /* Runs a script against the machine with no window. The clock is fixed, so a run repeats exactly.
    The CMOS RAM starts as it does for a game, or as all zeros with "blank" after the fdc number.
    PIARCBOOT_EXTROM and PIARCBOOT_HOSTFS name an extension ROM's folder of modules and HostFS's
-   folder, as a game's support pack gives them. */
+   folder, as a game's support pack gives them, and PIARCBOOT_MODE a screen mode for the desktop
+   on a multisync monitor, as a game's presets can. */
 static int cmd_test(int argc, char **argv)
 {
 	char *text, state[160];
+	uint8_t cmos[256];
 
 	if (argc < 2)
 		return 2;
 	machine_fixed_time = 1;
 	emu_extrom_dir = getenv("PIARCBOOT_EXTROM");
 	emu_hostfs_dir = getenv("PIARCBOOT_HOSTFS");
-	if (emu_start(argv[0], argc > 3 && !strcmp(argv[3], "blank") ? NULL : default_cmos, argc > 2 ? atoi(argv[2]) : 0))
+	memcpy(cmos, default_cmos, sizeof cmos);
+	if (getenv("PIARCBOOT_MODE"))
+		machine_cmos_desktop(cmos, atoi(getenv("PIARCBOOT_MODE")), 1);
+	if (emu_start(argv[0], argc > 3 && !strcmp(argv[3], "blank") ? NULL : cmos, argc > 2 ? atoi(argv[2]) : 0))
 	{
 		fprintf(stderr, "can't read the ROM %s\n", argv[0]);
 		return 1;
@@ -311,17 +320,91 @@ int main(int argc, char **argv)
 		return cmd_check();
 	if (!strcmp(cmd, "arc") && argc > 2)            /* the files in a Spark or ArcFS archive, for the test scripts */
 		return cmd_arc(argv[2]);
+	if (!strcmp(cmd, "ls") && argc > 2)             /* the files on a disc image, for writing presets */
+	{
+		char name[11];
+		size_t len;
+		uint8_t *img = disc_sectors(argv[2], &len);
+		adfs_file_t *files;
+		int boot, n = img ? adfs_read(img, len, &files, name, &boot) : -1;
+
+		free(img);
+		if (n < 0)
+		{
+			fprintf(stderr, "can't read the disc in %s\n", argv[2]);
+			return 1;
+		}
+		printf("disc name %s\nboot option %d\n", name, boot);
+		for (i = 0; i < n; i++)
+			if (files[i].dir)
+				printf("%s\n", files[i].path);
+			else
+				printf("%-40s %8u  %08x %08x\n", files[i].path, (unsigned)files[i].len, (unsigned)files[i].load, (unsigned)files[i].exec);
+		adfs_free(files, n);
+		return 0;
+	}
+	if (!strcmp(cmd, "extract") && argc > 3)        /* what is in an archive or on a disc image, to look into a game */
+	{
+		char error[200] = "it's no archive or disc image PiArcBoot reads";
+		size_t len, ilen;
+		uint8_t *d = file_read(argv[2], &len), *img;
+		adfs_file_t *files;
+		int n = -1;
+
+		if (d && len > 4 && !memcmp(d, "PK\3\4", 4))
+			n = adfs_from_zip(d, len, "", &files);
+		else if (d && arc_is_archive(d, len))
+			n = arc_files(d, len, &files, error, sizeof error);
+		else if ((img = disc_sectors(argv[2], &ilen)))
+		{
+			n = adfs_read(img, ilen, &files, NULL, NULL);
+			free(img);
+		}
+		free(d);
+		if (n < 0 || make_dirs(argv[3]) || write_hostfs(argv[3], files, n))
+		{
+			fprintf(stderr, "%s: %s\n", argv[2], n < 0 ? error : "can't write the files");
+			return 1;
+		}
+		printf("%d\n", n);
+		adfs_free(files, n);
+		return 0;
+	}
 	if (!strcmp(cmd, "add") && argc > 2)            /* a game from disc images or archives, as Add Game makes one */
 	{
 		char id[80], error[240];
+		progress_t p;
+		game_t g;
 
+		memset(&p, 0, sizeof p);
 		if (import_game(argv + 2, argc - 2, NULL, id, error, sizeof error))
 		{
 			fprintf(stderr, "%s\n", error);
 			return 1;
 		}
+		if (!store_load(id, &g))
+		{
+			if (run_installer(&g, id, &p) < 0)
+				fprintf(stderr, "%s\n", p.error);
+			store_save(&g);
+		}
 		printf("%s\n", id);
 		return 0;
+	}
+	if (!strcmp(cmd, "install") && argc > 2)        /* a game from the JASPP list, as Install does */
+	{
+		progress_t p;
+
+		memset(&p, 0, sizeof p);
+		for (i = 0; i < catalog_count(); i++)
+			if (!strcmp(catalog_entry(i)->id, argv[2]))
+			{
+				if (install_jaspp(catalog_entry(i), 0, 0, &p))
+					fprintf(stderr, "%s\n", p.error);
+				return p.done != 1;
+			}
+		fprintf(stderr, "no game called %s in the JASPP list\n", argv[2]);
+		return 1;
 	}
 	if (!strcmp(cmd, "classic") && argc == 2)       /* fetch the PackMan sources and list the Classics tab's games */
 	{

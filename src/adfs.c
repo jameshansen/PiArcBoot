@@ -1,5 +1,5 @@
 /* PiArcBoot: ADFS D format floppy images made from files, for games that come as an application
-   rather than as a disc image. D format is the 800K format with the old free space map and the
+   rather than as a disc image, and the files on a disc image read back (adfs_read, below). D format is the 800K format with the old free space map and the
    77 entry directories, which RISC OS 3.11 reads with the 1772. Laid out from FileCore's own
    definitions in the RISC OS Open sources:
 
@@ -379,6 +379,188 @@ void adfs_free(adfs_file_t *files, int n)
 	free(files);
 }
 
+/* ---- Reading a disc ----
+
+   The files on a disc image laid out as ADFS sees its sectors. L and D format discs have the old
+   map, and an entry says where its object is in 256 byte units. E format discs have the new map,
+   a bit for each 128 bytes (or whatever the disc record says), in which each object is one or
+   more fragments, each starting with the object's fragment ID and ending with a set bit. There an
+   entry names the fragment, and from 1 up how many sectors into it the object starts, for the
+   small objects that share one. Access bits are ignored, as an installer can change them. */
+
+typedef struct
+{
+	const uint8_t *img;
+	size_t len;
+	const uint8_t *rec;     /* the new map's disc record, or NULL for the old map */
+	int endbit;
+	adfs_file_t *files;
+	int n;
+} reader_t;
+
+#define MAP_START (32 + 60 * 8)         /* the bit after zone 0's header and disc record, which is disc address 0 */
+
+static uint32_t map_bits(const uint8_t *map, int bit, int count)
+{
+	uint32_t v = 0;
+	int i;
+
+	for (i = 0; i < count; i++, bit++)
+		v |= (uint32_t)(map[bit >> 3] >> (bit & 7) & 1) << i;
+	return v;
+}
+
+/* An object's bytes, to be freed, or NULL if they aren't all on the disc */
+static uint8_t *object(const reader_t *r, uint32_t ind, uint32_t len)
+{
+	uint8_t *out = malloc(len ? len : 1);
+	uint32_t got = 0;
+	size_t skip;
+	int bit, next_free, idlen, bpmb;
+
+	if (!r->rec)
+	{
+		if ((size_t)ind * 256 + len > r->len)
+			return free(out), NULL;
+		memcpy(out, r->img + (size_t)ind * 256, len);
+		return out;
+	}
+	idlen = r->rec[4];
+	bpmb = r->rec[5];
+	skip = ind & 255 ? (size_t)((ind & 255) - 1) << (r->rec[0] + (r->rec[33] & 15)) : 0;
+	next_free = map_bits(r->img, 8, 15) ? 8 + (int)map_bits(r->img, 8, 15) : 0;
+	for (bit = MAP_START; bit < r->endbit && got < len; )
+	{
+		uint32_t id = map_bits(r->img, bit, idlen);
+		int end = bit + idlen;
+
+		while (end < r->endbit && !map_bits(r->img, end, 1))
+			end++;
+		if (end >= r->endbit)
+			break;
+		if (bit == next_free)           /* free space, whose ID field is how far on the next is */
+			next_free = bit + (int)(id & 0x7fff);
+		else if (id == ind >> 8)
+		{
+			size_t at = (size_t)(bit - MAP_START) << bpmb, size = (size_t)(end + 1 - bit) << bpmb, take;
+
+			if (skip >= size)
+				skip -= size;
+			else
+			{
+				at += skip;
+				size -= skip;
+				skip = 0;
+				take = size < len - got ? size : len - got;
+				if (at + take > r->len)
+					break;
+				memcpy(out + got, r->img + at, take);
+				got += (uint32_t)take;
+			}
+		}
+		bit = end + 1;
+	}
+	if (got < len)
+		return free(out), NULL;
+	return out;
+}
+
+/* The entries of a directory of size bytes, and those of the directories in it */
+static void read_dir(reader_t *r, const uint8_t *d, uint32_t size, const char *path, int depth)
+{
+	int old = size == 1280, max = old ? 47 : 77, i, k;
+
+	if ((memcmp(d + 1, "Hugo", 4) && memcmp(d + 1, "Nick", 4)) || memcmp(d + 1, d + size - 5, 4))
+		return;
+	for (i = 0; i < max && d[5 + i * 26]; i++)
+	{
+		const uint8_t *e = d + 5 + i * 26;
+		uint32_t attr = old ? (e[0] >> 7 | (e[1] >> 7) << 1 | (e[2] >> 7) << 2 | (e[3] >> 7) << 3) : e[25];
+		uint32_t len = get32(e + 18), ind = e[22] | e[23] << 8 | (uint32_t)e[24] << 16;
+		char name[11], full[300];
+		adfs_file_t *f;
+
+		for (k = 0; k < 10 && (old ? e[k] & 0x7f : e[k]) > 32; k++)
+			name[k] = (char)(old ? e[k] & 0x7f : e[k]);
+		name[k] = 0;
+		if (!k || r->n >= 20000)
+			continue;
+		snprintf(full, sizeof full, "%s%s%s", path, path[0] ? "." : "", name);
+		r->files = realloc(r->files, (size_t)(r->n + 1) * sizeof *r->files);
+		f = &r->files[r->n];
+		memset(f, 0, sizeof *f);
+		f->path = strdup(full);
+		f->load = get32(e + 10);
+		f->exec = get32(e + 14);
+		f->attr = attr & ~8u;
+		f->dir = attr >> 3 & 1;
+		if (f->dir)
+		{
+			uint8_t *sub = (len == 1280 || len == 2048) && depth < 16 ? object(r, ind, len) : NULL;
+
+			r->n++;
+			if (sub)
+				read_dir(r, sub, len, full, depth + 1);
+			free(sub);
+		}
+		else if ((f->data = object(r, ind, len)))
+		{
+			f->len = len;
+			r->n++;
+		}
+		else
+			free((char *)f->path);
+	}
+}
+
+/* There is a directory of size bytes there: its start and end say Hugo or Nick */
+static int is_dir_at(const uint8_t *img, size_t len, size_t at, uint32_t size)
+{
+	return at + size <= len && (!memcmp(img + at + 1, "Hugo", 4) || !memcmp(img + at + 1, "Nick", 4)) && !memcmp(img + at + 1, img + at + size - 5, 4);
+}
+
+int adfs_read(const uint8_t *img, size_t len, adfs_file_t **out, char *disc_name, int *boot_option)
+{
+	reader_t r = { img, len, NULL, 0, NULL, 0 };
+	uint8_t *root = NULL;
+	uint32_t size = 2048;
+	int i;
+
+	*out = NULL;
+	if (is_dir_at(img, len, 0x400, 2048) || is_dir_at(img, len, 0x200, 1280))     /* D format's root, or L format's */
+	{
+		size = is_dir_at(img, len, 0x400, 2048) ? 2048 : 1280;
+		root = malloc(size);
+		memcpy(root, img + (size == 2048 ? 0x400 : 0x200), size);
+	}
+	else if (len >= 0x1000 && img[4] >= 8 && img[4] <= 10 && img[8] >= 8 && img[8] <= 21 && img[9] <= 12 && img[13] == 1)
+	{
+		r.rec = img + 4;        /* E format: one zone, its map at the start */
+		r.endbit = 32 + (8 << img[4]) - (img[14] | img[15] << 8);
+		if (r.endbit > (8 << img[4]) || r.endbit <= MAP_START)
+			return -1;
+		root = object(&r, get32(img + 4 + 12), size);
+	}
+	if (!root)
+		return -1;
+	read_dir(&r, root, size, "", 0);
+	free(root);
+	for (i = 0; disc_name && i < 10; i++)
+	{
+		uint8_t ch = r.rec ? r.rec[22 + i] : img[i % 2 ? 0x1f6 + i / 2 : 0xf7 + i / 2];
+
+		if (ch <= 32 || ch >= 127)
+			break;
+		disc_name[i] = (char)ch;
+	}
+	if (disc_name)
+		disc_name[i] = 0;
+	if (boot_option)
+		*boot_option = r.rec ? r.rec[7] : img[0x1fd];
+	*out = r.files;
+	return r.n;
+}
+
 /* For piarcboot check: a disc made from two files, one in a folder, read back */
 int adfs_selftest(void)
 {
@@ -405,6 +587,53 @@ int adfs_selftest(void)
 	fail |= (img[0] | img[1] << 8) != (ROOT + 2 * DIR_SIZE + 2 * SECTOR) / 256;  /* free after root, !Test, !Run and ReadMe */
 	fail |= (root[5 + ENTRY + 22] | root[5 + ENTRY + 23] << 8) * 256 % SECTOR != 0;
 	fail |= img[0xF7] != 'T' || img[0x1F6] != 'e' || img[0xF8] != 's';
+
+	/* read back off the disc */
+	{
+		adfs_file_t *got;
+		char name[11];
+		int boot, n = adfs_read(img, len, &got, name, &boot);
+
+		fail |= n != 3 || strcmp(got[0].path, "!Test") || !got[0].dir || strcmp(got[1].path, "!Test.!Run") || got[1].load != 0xFFFFEB41 ||
+			got[1].len != sizeof text - 1 || memcmp(got[1].data, text, got[1].len) || strcmp(got[2].path, "ReadMe") || got[2].len != 5 ||
+			strcmp(name, "Test");
+		adfs_free(got, n);
+	}
 	free(img);
+
+	/* An E format disc with one file. Its map's fragment 2 is the map and the root, 32 bits of 128
+	   bytes, and the file is fragment 3, the next 16, at &1000. */
+	{
+		uint8_t *e = calloc(1, 0x2000);
+		adfs_file_t *got;
+		int n, k;
+
+		e[4] = 10;              /* 1024 byte sectors */
+		e[8] = 15;              /* fragment IDs of 15 bits */
+		e[9] = 7;               /* 128 bytes a bit */
+		e[13] = 1;              /* one zone */
+		e[14] = 0x20;
+		e[15] = 0x05;
+		put32(e + 16, 0x203);   /* the root: fragment 2, two sectors in */
+		for (k = 0; k < 15; k++)
+		{
+			e[(MAP_START + k) >> 3] |= (uint8_t)((2 >> k & 1) << ((MAP_START + k) & 7));
+			e[(MAP_START + 32 + k) >> 3] |= (uint8_t)((3 >> k & 1) << ((MAP_START + 32 + k) & 7));
+		}
+		e[(MAP_START + 31) >> 3] |= (uint8_t)(1 << ((MAP_START + 31) & 7));
+		e[(MAP_START + 47) >> 3] |= (uint8_t)(1 << ((MAP_START + 47) & 7));
+		memcpy(e + 0x801, "Nick", 4);
+		memcpy(e + 0x800 + 2043, "Nick", 4);
+		memcpy(e + 0x805, "File\r", 5);
+		put32(e + 0x805 + 10, 0xFFFFFF41);
+		put32(e + 0x805 + 18, 5);
+		put24(e + 0x805 + 22, 0x300);
+		e[0x805 + 25] = 3;
+		memcpy(e + 0x1000, "Hello", 5);
+		n = adfs_read(e, 0x2000, &got, NULL, NULL);
+		fail |= (n != 1 || strcmp(got[0].path, "File") || got[0].len != 5 || memcmp(got[0].data, "Hello", 5)) << 1;
+		adfs_free(got, n);
+		free(e);
+	}
 	return fail;
 }

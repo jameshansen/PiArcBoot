@@ -17,7 +17,7 @@
 #include <windows.h>
 #include <commdlg.h>
 #else
-#include <signal.h>
+#include <sys/wait.h>
 #endif
 #include "piarcboot.h"
 #include "catalog.h"
@@ -114,6 +114,7 @@ int store_load(const char *id, game_t *g)
 	memset(g, 0, sizeof *g);
 	snprintf(g->id, sizeof g->id, "%s", id);
 	g->scale = 2;
+	g->crop = -1;
 	for (line = text; line && *line; line = next)
 	{
 		char *eq, *v;
@@ -132,6 +133,8 @@ int store_load(const char *id, game_t *g)
 		else if (!strcmp(line, "boot")) snprintf(g->boot, sizeof g->boot, "%s", v);
 		else if (!strcmp(line, "version")) snprintf(g->version, sizeof g->version, "%s", v);
 		else if (!strcmp(line, "sprite")) snprintf(g->sprite, sizeof g->sprite, "%s", v);
+		else if (!strcmp(line, "preset")) snprintf(g->preset, sizeof g->preset, "%s", v);
+		else if (!strcmp(line, "crop")) g->crop = atoi(v);
 		else if (!strcmp(line, "fdc")) g->fdc = atoi(v);
 		else if (!strcmp(line, "wp")) all_ro = atoi(v);         /* every disc write protected, as the JASPP table has some */
 		else if (!strcmp(line, "readonly") && n_ro < MAX_DISCS) snprintf(ro[n_ro++], sizeof ro[0], "%s", v);
@@ -178,6 +181,10 @@ int store_save(const game_t *g)
 	fprintf(f, "title=%s\ninfo=%s\nboot=%s\nversion=%s\nsprite=%s\nfdc=%d\njaspp=%d\nclassic=%d\napps=%d\nscale=%d\nfullscreen=%d\ncapture=%d\ndesktop=%d\nmenu=%d\n",
 		g->title, g->info, g->boot, g->version, g->sprite, g->fdc, g->jaspp, g->classic, g->apps, g->scale, g->fullscreen, !g->nocapture,
 		g->desktop, g->menu);
+	if (g->preset[0])
+		fprintf(f, "preset=%s\n", g->preset);
+	if (g->crop >= 0)
+		fprintf(f, "crop=%d\n", g->crop);
 	for (i = 0; i < g->ndiscs; i++)
 		fprintf(f, "disc=%s\n", g->disc[i]);
 	for (i = 0; i < g->ndiscs; i++)
@@ -488,42 +495,6 @@ int store_set_icon(const game_t *g, const sprite_t *s)
 	return r;
 }
 
-/* The names in a disc's root directory and its boot option. A directory starts with a count
-   byte and "Nick" or "Hugo" and ends with the same word, and the root is the one named "$".
-   Returns the number of names, or -1 if no root directory was found. */
-static int disc_root(const uint8_t *d, size_t len, char names[][64], int max, int *boot_option)
-{
-	size_t at, size = 0;
-	int n = 0, i;
-
-	for (at = 0x200; at + 2048 <= len && at < 0x100000; at += 0x100)
-	{
-		if (!memcmp(d + at + 1, "Nick", 4) && !memcmp(d + at + 2043, "Nick", 4) && d[at + 2032] == '$')
-			size = 2048;
-		else if (!memcmp(d + at + 1, "Hugo", 4) && !memcmp(d + at + 2043, "Hugo", 4) && d[at + 2032] == '$')
-			size = 2048;
-		else if (!memcmp(d + at + 1, "Hugo", 4) && !memcmp(d + at + 1275, "Hugo", 4) && d[at + 1228] == '$')
-			size = 1280;
-		if (size)
-			break;
-	}
-	if (!size)
-		return -1;
-	/* The boot option is in the disc record: at the start of the map on an E format disc, whose
-	   root follows the map at &800; in the old map's second sector on D and L format discs; and
-	   in the boot block on an F format disc */
-	*boot_option = at == 0x800 ? d[0x0b] : at <= 0x400 ? d[0x1fd] : len > 0xdc7 ? d[0xdc7] : 0;
-	for (at += 5; n < max && d[at]; at += 26)
-	{
-		for (i = 0; i < 10 && (d[at + i] & 0x7f) > 32; i++)
-			names[n][i] = d[at + i] & 0x7f;
-		names[n++][i] = 0;
-		if (n >= 77)
-			break;
-	}
-	return n;
-}
-
 /* Names as RISC OS sorts them, without regard to case */
 static int by_choice(const void *a, const void *b)
 {
@@ -553,8 +524,9 @@ static int is_system(const char *name)
    option set, and otherwise its first application. Returns how many. */
 int store_boot_choices(const game_t *g, char choices[][64], int max)
 {
-	char path[1024], names[80][64];
-	int n, i, count = 0, option = 0, first_app = -1;
+	char path[1024], names[80][64], name[64];
+	int n, i, k, count = 0, option = 0, first_app = -1;
+	adfs_file_t *files;
 	uint8_t *img;
 	size_t len;
 
@@ -584,18 +556,24 @@ int store_boot_choices(const game_t *g, char choices[][64], int max)
 				snprintf(choices[n++], 64, "%s", names[i]);
 		return n;
 	}
+	/* the names in the root of the first disc, a hard space in one as the # that matches it on a
+	   command line */
 	snprintf(choices[count++], 64, "%s", "");
 	store_game_path(g->id, g->disc[0], path, sizeof path);
-	img = image_sectors(path, &len);
-	n = img ? disc_root(img, len, names, 80, &option) : -1;
+	img = disc_sectors(path, &len);
+	n = img ? adfs_read(img, len, &files, NULL, &option) : -1;
 	free(img);
 	for (i = 0; i < n && count < max; i++)
-		if (names[i][0] == '!')
+		if (files[i].path[0] == '!' && !strchr(files[i].path, '.') && strlen(files[i].path) < 64)
 		{
-			if (first_app < 0 && !is_system(names[i]))
+			for (k = 0; files[i].path[k]; k++)
+				name[k] = (unsigned char)files[i].path[k] == 0xA0 ? '#' : files[i].path[k];
+			name[k] = 0;
+			if (first_app < 0 && !is_system(name))
 				first_app = count;
-			snprintf(choices[count++], 64, "%s", names[i]);
+			snprintf(choices[count++], 64, "%s", name);
 		}
+	adfs_free(files, n);
 	if (n >= 0 && !option && first_app > 0)        /* not a booting disc: lead with its application */
 	{
 		char t[64];
@@ -1111,6 +1089,12 @@ int install_jaspp(const entry_t *e, int desktop, int menu, progress_t *p)
 		detect(&g);
 		store_save(&g);
 	}
+	/* a game that came with a hard disc installer has the files it copies put on HostFS, and if
+	   that fails it plays from its floppies */
+	if (run_installer(&g, e->id, p) < 0)
+		fprintf(stderr, "piarcboot: %s\n", p->error);
+	p->error[0] = 0;
+	store_save(&g);
 #ifdef _WIN32
 	{
 		uint8_t rgba[128 * 128 * 4];
@@ -1575,16 +1559,22 @@ int spawn_game(const char *id)
 	CloseHandle(pi.hThread);
 	return 0;
 #else
-	pid_t pid;
+	/* The game runs as a grandchild, which nobody waits for and which leaves nothing behind, so
+	   that the commands the launcher waits for are its only children */
+	pid_t pid = fork();
 
-	signal(SIGCHLD, SIG_IGN);       /* nobody waits for the game, so it leaves nothing behind */
-	pid = fork();
 	if (pid == 0)
 	{
 		setsid();
-		execl(store_exe(), store_exe(), "play", id, (char *)NULL);
-		_exit(127);
+		if ((pid = fork()) == 0)
+		{
+			execl(store_exe(), store_exe(), "play", id, (char *)NULL);
+			_exit(127);
+		}
+		_exit(pid < 0 ? 127 : 0);
 	}
+	if (pid > 0)
+		waitpid(pid, NULL, 0);
 	return pid < 0 ? -1 : 0;
 #endif
 }

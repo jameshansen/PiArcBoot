@@ -626,6 +626,14 @@ static int flat_parse(disc_t *disc, const uint8_t *d, size_t len)
 	}
 	else if (sh == &shapes[0] && len > shapes[0].size)
 		sh = &shapes[2];        /* bigger than 800K: lay it out as a 1.6MB disc */
+	else if (sh == &shapes[0] && len && len < shapes[0].size && len % 10240 == 0)
+	{
+		/* An 800K image that stops at the end of a cylinder holds the cylinders the disc had
+		   formatted, and the ones after it are left unformatted, as on a disc duplicated with
+		   only the tracks it uses. STARCH's protection checks that cylinder 64 can't be read. */
+		longer.cyls = (int)(len / 10240);
+		sh = &longer;
+	}
 	for (code = 0; (128 << code) < sh->bytes; code++);
 	for (c = 0; c < sh->cyls; c++)
 		for (h = 0; h < sh->heads; h++)
@@ -888,17 +896,16 @@ static int by_id(const void *a, const void *b)
 	return (*(const dsector_t *const *)a)->r - (*(const dsector_t *const *)b)->r;
 }
 
-static uint8_t *flatten(const uint8_t *raw, size_t raw_len, size_t *len)
+/* A disc's sides as one run of sectors, which frees the disc. A side that doesn't have the regular
+   layout goes in as its sectors in ID order, or with geometric, in the room a regular side takes,
+   each of its sectors of the regular size and an ID under the count where ADFS would look for it. */
+static uint8_t *lay_out(disc_t *disc, int geometric, size_t *len)
 {
-	uint32_t tt, st, da;
-	int sides, i, k, count = 5, last = -1, votes[64][8] = { { 0 } }, best = 0, nout;
+	int i, k, count = 5, last = -1, votes[64][8] = { { 0 } }, best = 0, nout;
 	uint32_t size = 1024;
-	disc_t *disc;
 	uint8_t *out;
 	size_t at = 0, cap;
 
-	if (!jfd_tables(raw, raw_len, &tt, &st, &da, &sides) || !(disc = disc_parse(raw, raw_len)))
-		return NULL;
 	/* The regular layout: the commonest count and size among sides with one size and IDs from 0.
 	   The sides the image left out up to track 79 are back in by now, so an 800K disc comes out
 	   as 800K. */
@@ -934,6 +941,13 @@ static uint8_t *flatten(const uint8_t *raw, size_t raw_len, size_t *len)
 				memcpy(out + at + side->s[k].r * size, side->s[k].data, size);
 			at += (size_t)count * size;
 		}
+		else if (geometric)
+		{
+			for (k = 0; k < side->n; k++)
+				if (side->s[k].r < count && side->s[k].len == size)
+					memcpy(out + at + side->s[k].r * size, side->s[k].data, size);
+			at += (size_t)count * size;
+		}
 		else
 		{
 			const dsector_t **order = malloc(side->n * sizeof *order);
@@ -957,6 +971,24 @@ static uint8_t *flatten(const uint8_t *raw, size_t raw_len, size_t *len)
 	disc_free(disc);
 	*len = at;
 	return out;
+}
+
+static uint8_t *flatten(const uint8_t *raw, size_t raw_len, size_t *len)
+{
+	uint32_t tt, st, da;
+	int sides;
+	disc_t *disc;
+
+	if (!jfd_tables(raw, raw_len, &tt, &st, &da, &sides) || !(disc = disc_parse(raw, raw_len)))
+		return NULL;
+	return lay_out(disc, 0, len);
+}
+
+uint8_t *disc_sectors(const char *path, size_t *len)
+{
+	disc_t *disc = disc_open(path);
+
+	return disc ? lay_out(disc, 1, len) : NULL;
 }
 
 uint8_t *jfd_flatten(const char *path, size_t *len)

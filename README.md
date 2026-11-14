@@ -16,15 +16,15 @@ I grew up with some of these games on the Acorn Archimedes. I've also been build
 
 I wanted to add the RISC OS version of Lemmings to that list, along with the other games [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservation Project, has released with their publishers' permission. The problem is that these games need a ROM with RISC OS, the Archimedes' operating system, to start, and the RISC OS 3.11 ROM is commercial, so I built [ROO311](https://github.com/jameshansen/ROO311), a free ROM made from the RISC OS Open sources, to remove that block. PiArcBoot is the tool it was built for, and ROO311 comes with it.
 
-PiArcBoot lists 110 of the JASPP games. Install fetches a game from JASPP and Play starts it in a window of its own, with no ROM to find, no emulator to set up and no desktop to click through. Each game boots behind a splash screen on an Archimedes emulated by [ArcEm](https://github.com/ArcEm-emu/ArcEm), and the window shows it once the game has a screen of its own.
+PiArcBoot lists 113 of the JASPP games. Install fetches a game from JASPP and Play starts it in a window of its own, with no ROM to find, no emulator to set up and no desktop to click through. Each game boots behind a splash screen on an Archimedes emulated by [ArcEm](https://github.com/ArcEm-emu/ArcEm), and the window shows it once the game has a screen of its own.
 
 The Classics tab has freeware that comes as RISC OS applications rather than disc images, such as Hamsters, Cycloids, Asylum and Oddball (former commercial games their authors and publishers let Acorn Arcade give away), along with the desktop games from PackMan, RISC OS Open's package manager. Install turns each one into floppy images, and it starts straight into play the same way the JASPP games do. Star Fighter 3000 is too big for a floppy and needs more than RISC OS 3.11 had, so it goes in a folder the machine reads directly, with ROO311's support pack beside it. Disc images of your own become games too, and so do archives of RISC OS applications, with an icon made from a sprite inside.
 
 ## The games
 
-The JASPP tab is JASPP's own package feed, cut down to the games that start the same way on ROO311 as on RISC OS 3.11 and take over the screen, rather than running in the RISC OS desktop. A game JASPP adds later appears by itself once its floppy images are there, marked as untested.
+The JASPP tab is JASPP's own package feed, cut down to the games that start the same way on ROO311 as on RISC OS 3.11. Most take over the screen, and the few that play in the RISC OS desktop, such as SimCity and Mah-Jong Patience, are shown cropped to their windows. A game JASPP adds later appears by itself once its floppy images are there, marked as untested.
 
-PiArcBoot contains none of the games. Install downloads each game's floppy images from JASPP, which needs an internet connection, and an installed game plays offline. The emulated machine has floppy drives and nothing else, so nothing running in it can reach the files on your computer, apart from Star Fighter 3000, which sees its own folder and nothing outside it.
+PiArcBoot contains none of the games. Install downloads each game's floppy images from JASPP, which needs an internet connection, and an installed game plays offline. The emulated machine has floppy drives and nothing else, so nothing running in it can reach the files on your computer, apart from Star Fighter 3000 and the games that install onto a hard disc, each of which sees its own folder and nothing outside it.
 
 PiArcBoot is an unofficial project and isn't affiliated with JASPP or with RISC OS Open Ltd.
 
@@ -36,7 +36,9 @@ PiArcBoot is an unofficial project and isn't affiliated with JASPP or with RISC 
 - **Disc switching** from the Switch Floppy menu or with Alt and a number, and auto switch points, which change the disc by themselves when a game shows the screen that asks for it.
 - **Your own disc images.** Add Game on the My Games tab turns JFD, ADF, ADL and HFE images, the usual Archimedes disc image formats, or a zip of them, into games, with the discs put in order from their names.
 - **Your own archives.** A zip, Spark or ArcFS archive of RISC OS applications becomes a game too: its files go on floppy images, or in a folder the machine reads directly when they're too big for floppies or need the support pack, and it starts from the application named after the archive, or its biggest.
+- **Hard disc installs.** The games that came with a hard disc installer, such as Black Angel, Carnage Inc and Raw Power, have the files it would copy taken straight off their disc images as they install, or as their discs are added with Add Game, so they start from a folder the machine reads directly with no discs to swap. A copy of those files is kept, and the game starts from a fresh copy if its folder is ever removed.
 - **Saves are kept** in a file beside each disc image, and the image itself is never changed. Any disc can be made read only.
+- **Windows only** for a game that plays in the RISC OS desktop: the picture is cropped to the game's windows, leaving out the icon bar and the desktop around them, and it follows them as they open, close and move. The desktop is 640 by 512 in 256 colours, as the Classics' is, and a small window of the game's is never blown up past the window's scale. The Game menu turns it on or off for any game, your own included, and the games that need it start with it on.
 - **Copy protection as the disc has it**, so the games' own disc checks pass.
 
 ![Lemmings' first level in a window of its own, under its Game and Switch Floppy menus](docs/game.png)
@@ -49,11 +51,13 @@ Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 2
 - The games' disc checks pass, among them Hero Quest's, Fire and Ice's and Blaston's, and what Jet Fighter writes to its boot disc is kept
 - Blank discs format, take files and read back after a fresh power on
 - The 11 Acorn Arcade games and 12 PackMan games in Classics install and start, Star Fighter 3000 and Meteors full screen
+- Mah-Jong Patience, Premier Manager and SimCity, which play in the RISC OS desktop, start in their windows and are shown cropped to them, as Haunted House is
+- The 9 games with a hard disc installer install onto a folder the machine reads directly and start from there: Black Angel, Break 147 & Superpool, Carnage Inc, Drop Ship, The Exotic Adventures of Sylvia Layne, Haunted House, Raw Power, Saloon Cars Deluxe and Stunt Racer 2000
 - On the Pi 400 the emulated machine can run about 2.5 times faster than a real one, and Lemmings holds full speed in a game window
 
 ### Not yet
 
-- Games that run inside the RISC OS desktop aren't listed, and joysticks aren't supported
+- Joysticks aren't supported
 - Champions installs with 3 of its 5 discs, the ones JASPP's package has
 - DarkWood, which needs a Risc PC, and Phaethon, which needs two drives, aren't in Classics, nor are the PackMan games that need SharedCLibrary 5, more than 4MB or a screen mode an Archimedes can't show (`presets/README.md` lists them)
 - ArcElite takes 39 seconds to load from its floppy
@@ -101,6 +105,8 @@ In full screen there is no menu bar, and Alt+Enter comes back to the window.
 
 Drag the window's edge or maximize it and the picture grows to fill the frame, keeping its shape. A size from the Game menu puts the window back to an exact multiple.
 
+**Windows Only** in the Game menu shows just the game's windows, for a game that plays in the RISC OS desktop, and the pointer then goes where yours is over the picture. PiArcBoot remembers the choice for each game.
+
 To set an auto switch point, wait for the game to ask for a disc, choose **Set Auto Switch Point** from the Switch Floppy menu and then choose the disc. **Clear Auto Switch Points** forgets them all.
 
 Games are kept in `~/.local/share/piarcboot/games`, a folder each, with their disc images, saved changes (`.sav`), icon and settings.
@@ -109,11 +115,11 @@ Games are kept in `~/.local/share/piarcboot/games`, a folder each, with their di
 
 ## How it works
 
-The machine is [ArcEm](https://github.com/ArcEm-emu/ArcEm)'s, set up as an Archimedes with a 25 MHz ARM3 and 4MB of memory, with floppy drives and nothing else, so nothing running in it can reach the files on your computer. A game with a support pack is the one exception, and sees only its own folder. ArcEm's processor, memory controller, IOC, VIDC, sound and keyboard are used as ArcEm has them, in `arcem/`, and PiArcBoot's own code in `src/` adds the floppy drives and connects the picture, sound, keyboard and mouse to the window.
+The machine is [ArcEm](https://github.com/ArcEm-emu/ArcEm)'s, set up as an Archimedes with a 25 MHz ARM3 and 4MB of memory, with floppy drives and nothing else, so nothing running in it can reach the files on your computer. A game with a support pack or a hard disc install is the exception, and sees only its own folder. ArcEm's processor, memory controller, IOC, VIDC, sound and keyboard are used as ArcEm has them, in `arcem/`, and PiArcBoot's own code in `src/` adds the floppy drives and connects the picture, sound, keyboard and mouse to the window. One fix is made to ArcEm's processor: a load that steps its base by a register (`LDRB r3, [r4], r3, LSL #1`) steps it by that register's value from before the load, as the ARM2 and ARM3 do, even when the load overwrites it. Star Fighter 3000's sample player does that, and its music and effects played only their first few samples without it.
 
 The machine runs 25 million cycles to a second of its own time, a fixed rate rather than one measured against the host, so a game takes the same machine time on every computer and a test script gives the same result every time. The game window keeps it to real time a centisecond at a time.
 
-A game boots behind the splash screen with the machine running flat out. A disc that boots gets Shift held until it is first read. For any other disc, ROO311's HostLink module runs the application once the desktop is up, the way a double-click would. HostLink then reports a screen mode change when the game takes the screen, an error box when it asks for a disc, or a new desktop task, whose icon bar icon it clicks for a game that waits to be clicked. The splash stays up until one of those, so the desktop isn't seen on the way.
+A game boots behind the splash screen with the machine running flat out. A disc that boots gets Shift held until it is first read. For any other disc, ROO311's HostLink module runs the application once the desktop is up, the way a double-click would. HostLink then reports a screen mode change when the game takes the screen, an error box when it asks for a disc, or a new desktop task, whose icon bar icon it clicks for a game that waits to be clicked. The splash stays up until one of those, so the desktop isn't seen on the way. HostLink also reports where the windows on the screen are, five times a second when they change, as it walks up the Wimp's window stack from the icon bar, and for a game shown Windows Only the picture is cropped to the area they cover. A game that plays in the desktop has its icon clicked once its floppy drive has been still for a second.
 
 The floppy controller is a WD1772 written from its data sheet, with the disc turning under it at 300 rpm and each sector passing the head at its place on the track. A JFD image records each sector's place, size, number and CRC errors, which is how JASPP keeps a disc's copy protection, so the games' checks find what they would on the real disc. Botkiller 2 and the Risc PC version of Speedball 2 come on 1.6MB discs, so for those two the machine becomes an A5000, a later Archimedes, with its 82C711, whose 765 floppy controller is also written from its data sheet.
 
@@ -125,7 +131,9 @@ An archive added with Add Game is laid out the same way. Spark and ArcFS archive
 
 A game that needs more than RISC OS 3.11 had, Star Fighter 3000 so far, gets [ROO311's support pack](https://github.com/jameshansen/ROO311#support-pack), mirrored in `distributable-games/support-packs`. Its nested Window Manager goes in an extension ROM with ArcEm's HostFS module, and RISC OS takes both up at power on, the Window Manager in place of the ROM's own, since it can't be replaced once the desktop has started. The game goes in a folder that HostFS shows the machine, with the pack's `!System` of Toolbox modules and its `!Scrap`, which HostLink boots before it runs the game.
 
-What PiArcBoot knows about particular Classics games is in `presets/`, not its code. A game can have files that Install adds to its own, such as the choices file that starts Star Fighter 3000 full screen where it would otherwise open in a desktop window, and settings: the support pack it needs, keys to press once it has started (Escape puts Meteors on the whole screen), or why a PackMan game is left out. `presets/README.md` describes them.
+The hard disc installers of the games that came with one copy files from the game's discs and nothing more, some folders renamed and a later disc's files merged into the first's. A list in `presets/` says which, and Install copies them straight from the disc images into the folder HostFS shows the machine. `src/adfs.c` reads the discs: D format, with the old map, and E format, with the new map, where each file is one or more fragments of the map, and access bits that would stop a file being read are ignored. A copy of the folder is kept as `installed/` beside it, and the game starts from the folder through HostLink, as a support pack game does, with a fresh copy put back from `installed/` whenever the folder is missing. Disc images added with Add Game get the same, when the root of their first disc names the same applications as a game with a list. Each list was taken from what the real installer copies, and `tests/installers.sh` checks it still matches. It runs the installer in the emulator, worked by a script in `tests/installers/` that clicks in its window, types `HostFS:$` as the place to install to, and puts in each disc it asks for.
+
+What PiArcBoot knows about particular games is in `presets/`, not its code. A game can have files that Install adds to its own, such as the choices file that starts Star Fighter 3000 full screen where it would otherwise open in a desktop window, the files its hard disc installer copies, and settings: the support pack it needs, keys to press once it has started (Escape puts Meteors on the whole screen), the screen mode for a game that plays in the desktop (MODE 15 for Black Angel), or why a PackMan game is left out. `presets/README.md` describes them.
 
 The picture comes from ArcEm's display driver and is scaled by the graphics chip, with pixels repeated to the nearest whole size and only the edges between them blended, so it stays sharp at any window size. Sound is ArcEm's mix of the VIDC's 8 channels at 48 kHz, resampled slightly to keep about 80 ms queued. The launcher and the splash screen use [ROOGUI](https://github.com/jameshansen/ROOGUI), a separate library that draws the RISC OS look from RISC OS Open's sprites and fonts at any display scale.
 
@@ -160,7 +168,7 @@ sh tools/build-windows.sh <SDL2 folder> <zlib folder>
 | `tests/` | Scripts that boot every game in the table, compare pictures and test writing to discs |
 | `tools/` | The Windows build and the script that makes the game table |
 | `icons/` | The games' icons, made from their sprites |
-| `presets/` | Files Install adds to a game, such as a choices file that suits PiArcBoot's window |
+| `presets/` | Files Install adds to a game, such as a choices file that suits PiArcBoot's window, settings, and what games' hard disc installers copy |
 | `docs/` | Screenshots and release notes |
 | `ROM311` | The ROM image from ROO311's releases |
 | `distributable-games/` | The Classics games' zips, kept for installing from and not part of a release |

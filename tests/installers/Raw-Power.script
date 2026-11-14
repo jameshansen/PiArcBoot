@@ -1,0 +1,29 @@
+# Raw Power's hard disc installer, !RawInst, worked as a person would. It asks its questions on a
+# screen of text: whether to go on, then where to install to, which is HostFS's root. It copies
+# disc 2 first, then disc 1.
+wait 1800
+run Filer_Run adfs::0.$.!RawInst
+wait 800
+type y
+wait 1500
+type HostFS:$
+wait 100
+key return down
+wait 5
+key return up
+# "Insert RAW POWER DISK 2 into DRIVE 0, then press SPACE", once the drive has stopped
+wait 1000
+disc 0 2
+wait 50
+key space down
+wait 5
+key space up
+# disc 1 again when that has copied
+untilidle 500 60000
+disc 0 1
+wait 50
+key space down
+wait 5
+key space up
+# done once the drive has been still for 10 seconds
+untilidle 1000 60000

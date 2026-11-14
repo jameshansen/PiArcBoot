@@ -1,0 +1,5 @@
+# What Carnage Inc's Hard Disc Installer copies: the game from disc 1, and the data on discs 2
+# and 3 into its folder
+copy 1 $.!Carnage $.!Carnage
+copy 2 $.!Data $.!Carnage.!Data
+copy 3 $.!Data2 $.!Carnage.!Data2

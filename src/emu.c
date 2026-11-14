@@ -255,7 +255,7 @@ void emu_mouse(int dx, int dy, int buttons)
 
 /* ---- The script ---- */
 
-enum { S_WAIT, S_UNTILREAD, S_KEY, S_MOUSE, S_BUTTON, S_DISC, S_SHOT, S_CMOS, S_RUN, S_CLICK };
+enum { S_WAIT, S_UNTILREAD, S_UNTILERROR, S_UNTILIDLE, S_KEY, S_MOUSE, S_BUTTON, S_DISC, S_SHOT, S_CMOS, S_RUN, S_CLICK, S_POINTER };
 
 typedef struct
 {
@@ -264,7 +264,7 @@ typedef struct
 } step_t;
 
 static step_t *steps;
-static int n_steps, pc, wait_left, until_active, until_left, until_base;
+static int n_steps, pc, wait_left, until_active, until_left, until_base, *until_count, idle_need, idle_run;
 
 static void add(int op, int a, int b, const char *s)
 {
@@ -348,6 +348,10 @@ void emu_script_line(const char *line)
 		add(S_WAIT, atoi(a), 0, NULL);
 	else if (!strcmp(cmd, "untilread") && n >= 1)
 		add(S_UNTILREAD, atoi(a), 0, NULL);
+	else if (!strcmp(cmd, "untilerror") && n >= 1)  /* HostLink: until an error box opens, as for a disc to put in */
+		add(S_UNTILERROR, atoi(a), 0, NULL);
+	else if (!strcmp(cmd, "untilidle") && n == 2)    /* until the floppy drive has been still for a cs, or b cs have gone */
+		add(S_UNTILIDLE, atoi(a), atoi(b), NULL);
 	else if (!strcmp(cmd, "key") && n == 2 && !find_key(a, &kid))
 		add(S_KEY, kid, !strcmp(b, "down"), NULL);
 	else if (!strcmp(cmd, "type"))
@@ -360,6 +364,8 @@ void emu_script_line(const char *line)
 	}
 	else if (!strcmp(cmd, "mouse") && n == 2)
 		add(S_MOUSE, atoi(a), atoi(b), NULL);
+	else if (!strcmp(cmd, "pointer") && n == 2)      /* HostLink: the pointer to there, in OS units */
+		add(S_POINTER, atoi(a), atoi(b), NULL);
 	else if (!strcmp(cmd, "button") && n == 2 && strchr("lmr", a[0]))
 		add(S_BUTTON, a[0] == 'l' ? 1 : a[0] == 'r' ? 2 : 4, !strcmp(b, "down"), NULL);
 	else if ((!strcmp(cmd, "disc") || !strcmp(cmd, "discp")) && n == 2)
@@ -410,7 +416,8 @@ static void script_run(void)
 		}
 		if (until_active)
 		{
-			if (machine_disc_reads != until_base || until_left <= 0)
+			idle_run = machine_motor_on() ? 0 : idle_run + 1;
+			if ((until_count ? *until_count != until_base : idle_run >= idle_need) || until_left <= 0)
 				until_active = 0;
 			else
 			{
@@ -428,9 +435,19 @@ static void script_run(void)
 			break;
 
 			case S_UNTILREAD:
+			case S_UNTILERROR:
 			until_active = 1;
 			until_left = s->a;
-			until_base = machine_disc_reads;
+			until_count = s->op == S_UNTILREAD ? &machine_disc_reads : &emu_host_errors;
+			until_base = *until_count;
+			break;
+
+			case S_UNTILIDLE:
+			until_active = 1;
+			until_left = s->b;
+			until_count = NULL;
+			idle_need = s->a;
+			idle_run = 0;
 			break;
 
 			case S_KEY:
@@ -460,6 +477,10 @@ static void script_run(void)
 
 			case S_CLICK:
 			emu_host_click(s->s);
+			break;
+
+			case S_POINTER:
+			emu_host_pointer(s->a, s->b);
 			break;
 
 			case S_CMOS:
@@ -703,6 +724,7 @@ void HDC_Write(ARMul_State *state, uint_fast16_t offset, uint_fast16_t data)
 enum { HL_HELLO = 0x20, HL_POLL, HL_EVENT, HL_POINTER };
 
 int emu_hostlink, emu_host_modes, emu_host_clicked, emu_host_missed, emu_host_errors, emu_host_tasks;
+int emu_host_nwins, emu_host_wins[31][4];
 int emu_host_modes_at_run = -1, emu_host_errors_at_run = -1, emu_host_tasks_at_run = -1, emu_host_vidc_at_run = -1;
 static struct
 {
@@ -790,6 +812,17 @@ static bool hostlink_swi(ARMul_State *state, unsigned number)
 			emu_host_errors++;
 		else if (state->Reg[0] == 5)
 			emu_host_tasks++;
+		else if (state->Reg[0] == 6)    /* the windows on the screen: how many, then each one's outline */
+		{
+			ARMword at = state->Reg[1], n = ARMul_LoadWordS(state, at);
+
+			n = n > 31 ? 0 : n;
+			for (i = 0; i < n * 4; i++)
+				emu_host_wins[i / 4][i % 4] = (int)ARMul_LoadWordS(state, at + 4 + (ARMword)i * 4);
+			emu_host_nwins = (int)n;
+			for (i = 0; tracing && i < n; i++)
+				fprintf(stderr, "hostlink window %d %d %d %d\n", emu_host_wins[i][0], emu_host_wins[i][1], emu_host_wins[i][2], emu_host_wins[i][3]);
+		}
 		if (tracing)
 			fprintf(stderr, "hostlink event %u %u\n", (unsigned)state->Reg[0], (unsigned)state->Reg[1]);
 		return true;

@@ -1,0 +1,4 @@
+# What Haunted House's Hard Disc Installer copies: the game from disc 1, and the second part on
+# disc 2 into its folder
+copy 1 $.!Haunted $.!Haunted
+copy 2 $.!Haunt2 $.!Haunted.!Haunt2

@@ -1,0 +1,4 @@
+# What Raw Power's !RawInst copies: the game's folder from disc 2, then from disc 1, whose !Run
+# takes the place of disc 2's
+copy 2 $.!RawPower $.!RawPower
+copy 1 $.!RawPower $.!RawPower

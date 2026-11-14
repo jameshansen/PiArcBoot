@@ -1,0 +1,4 @@
+# What Black Angel's Hard Disc Installer copies: the game from disc 1, and the code for a 2MB
+# machine from disc 2
+copy 1 $.!BlackAngl $.!BlackAngl
+copy 2 $.!AngelTwo.Twomegcode $.!BlackAngl.Twomegcode

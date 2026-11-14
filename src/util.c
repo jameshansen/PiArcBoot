@@ -210,6 +210,35 @@ void remove_tree(const char *path)
 		unlink(path);
 }
 
+/* A folder and all in it copied to another, which is made. 0 when it all copied. */
+int copy_tree(const char *from, const char *to)
+{
+	DIR *d = opendir(from);
+	struct dirent *e;
+	char a[1024], b[1024];
+	int bad = !d || make_dirs(to);
+
+	while (!bad && (e = readdir(d)))
+		if (strcmp(e->d_name, ".") && strcmp(e->d_name, ".."))
+		{
+			snprintf(a, sizeof a, "%s/%s", from, e->d_name);
+			snprintf(b, sizeof b, "%s/%s", to, e->d_name);
+			if (is_dir(a))
+				bad = copy_tree(a, b);
+			else
+			{
+				size_t len;
+				uint8_t *data = file_read(a, &len);
+
+				bad = !data || file_write(b, data, len);
+				free(data);
+			}
+		}
+	if (d)
+		closedir(d);
+	return bad;
+}
+
 /* Runs a command line and waits for it. Returns its exit status, or -1 if it didn't start.
    On Windows no console window opens for it. */
 static int run(char *cmd)

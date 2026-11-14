@@ -1,0 +1,7 @@
+# What The Exotic Adventures of Sylvia Layne's Hard Disc Installer copies: the game and its extras
+# from disc 1, and the CITY, AZTEC and SPACE discs' folders into its folder
+copy 1 $.!Sylvia $.!Sylvia
+copy 1 $.EXTRAS $.!Sylvia.EXTRAS
+copy 2 $.CITY $.!Sylvia.CITY
+copy 3 $.aztec $.!Sylvia.Aztec
+copy 4 $.HOUSTON $.!Sylvia.Houston

@@ -1209,11 +1209,12 @@ static void EMFUNCDECL26(StoreNoWritePostDecReg) (ARMul_State *state, ARMword in
 }
 
 static void EMFUNCDECL26(LoadNoWritePostDecReg) (ARMul_State *state, ARMword instr) {
-  register ARMword lhs;
+  register ARMword lhs, rhs;
   EMFUNC_CONDTEST
              lhs = LHS;
+             rhs = LSRegRHS; /* before the load, which may overwrite Rm */
              if (LoadWord(state,instr,lhs))
-                LSBase = lhs - LSRegRHS;
+                LSBase = lhs - rhs;
 }
 
 static void EMFUNCDECL26(StoreWritePostDecReg) (ARMul_State *state, ARMword instr) {
@@ -1227,12 +1228,13 @@ static void EMFUNCDECL26(StoreWritePostDecReg) (ARMul_State *state, ARMword inst
 }
 
 static void EMFUNCDECL26(LoadWritePostDecReg) (ARMul_State *state, ARMword instr) {
-  register ARMword lhs;
+  register ARMword lhs, rhs;
   EMFUNC_CONDTEST
              lhs = LHS;
+             rhs = LSRegRHS; /* before the load, which may overwrite Rm */
              state->NtransSig = LOW;
              if (LoadWord(state,instr,lhs))
-                LSBase = lhs - LSRegRHS;
+                LSBase = lhs - rhs;
              state->NtransSig = (R15MODE)?HIGH:LOW;
 }
 
@@ -1245,11 +1247,12 @@ static void EMFUNCDECL26(StoreBNoWritePostDecReg) (ARMul_State *state, ARMword i
 }
 
 static void EMFUNCDECL26(LoadBNoWritePostDecReg) (ARMul_State *state, ARMword instr) {
-  register ARMword lhs;
+  register ARMword lhs, rhs;
   EMFUNC_CONDTEST
              lhs = LHS;
+             rhs = LSRegRHS; /* before the load, which may overwrite Rm */
              if (LoadByte(state,instr,lhs))
-                LSBase = lhs - LSRegRHS;
+                LSBase = lhs - rhs;
 }
 
 static void EMFUNCDECL26(StoreBWritePostDecReg) (ARMul_State *state, ARMword instr) {
@@ -1263,12 +1266,13 @@ static void EMFUNCDECL26(StoreBWritePostDecReg) (ARMul_State *state, ARMword ins
 }
 
 static void EMFUNCDECL26(LoadBWritePostDecReg) (ARMul_State *state, ARMword instr) {
-  register ARMword lhs;
+  register ARMword lhs, rhs;
   EMFUNC_CONDTEST
              lhs = LHS;
+             rhs = LSRegRHS; /* before the load, which may overwrite Rm */
              state->NtransSig = LOW;
              if (LoadByte(state,instr,lhs))
-                LSBase = lhs - LSRegRHS;
+                LSBase = lhs - rhs;
              state->NtransSig = (R15MODE)?HIGH:LOW;
 }
 
@@ -1281,11 +1285,12 @@ static void EMFUNCDECL26(StoreNoWritePostIncReg) (ARMul_State *state, ARMword in
 }
 
 static void EMFUNCDECL26(LoadNoWritePostIncReg) (ARMul_State *state, ARMword instr) {
-  register ARMword lhs;
+  register ARMword lhs, rhs;
   EMFUNC_CONDTEST
              lhs = LHS;
+             rhs = LSRegRHS; /* before the load, which may overwrite Rm */
              if (LoadWord(state,instr,lhs))
-                LSBase = lhs + LSRegRHS;
+                LSBase = lhs + rhs;
 }
 
 static void EMFUNCDECL26(StoreWritePostIncReg) (ARMul_State *state, ARMword instr) {
@@ -1299,12 +1304,13 @@ static void EMFUNCDECL26(StoreWritePostIncReg) (ARMul_State *state, ARMword inst
 }
 
 static void EMFUNCDECL26(LoadWritePostIncReg) (ARMul_State *state, ARMword instr) {
-  register ARMword lhs;
+  register ARMword lhs, rhs;
   EMFUNC_CONDTEST
              lhs = LHS;
+             rhs = LSRegRHS; /* before the load, which may overwrite Rm */
              state->NtransSig = LOW;
              if (LoadWord(state,instr,lhs))
-                LSBase = lhs + LSRegRHS;
+                LSBase = lhs + rhs;
              state->NtransSig = (R15MODE)?HIGH:LOW;
 }
 
@@ -1317,11 +1323,12 @@ static void EMFUNCDECL26(StoreBNoWritePostIncReg) (ARMul_State *state, ARMword i
 }
 
 static void EMFUNCDECL26(LoadBNoWritePostIncReg) (ARMul_State *state, ARMword instr) {
-  register ARMword lhs;
+  register ARMword lhs, rhs;
   EMFUNC_CONDTEST
              lhs = LHS;
+             rhs = LSRegRHS; /* before the load, which may overwrite Rm */
              if (LoadByte(state,instr,lhs))
-                LSBase = lhs + LSRegRHS;
+                LSBase = lhs + rhs;
 }
 
 static void EMFUNCDECL26(StoreBWritePostIncReg) (ARMul_State *state, ARMword instr) {
@@ -1335,12 +1342,13 @@ static void EMFUNCDECL26(StoreBWritePostIncReg) (ARMul_State *state, ARMword ins
 }
 
 static void EMFUNCDECL26(LoadBWritePostIncReg) (ARMul_State *state, ARMword instr) {
-  register ARMword lhs;
+  register ARMword lhs, rhs;
   EMFUNC_CONDTEST
              lhs = LHS;
+             rhs = LSRegRHS; /* before the load, which may overwrite Rm */
              state->NtransSig = LOW;
              if (LoadByte(state,instr,lhs))
-                LSBase = lhs + LSRegRHS;
+                LSBase = lhs + rhs;
              state->NtransSig = (R15MODE)?HIGH:LOW;
 }
 

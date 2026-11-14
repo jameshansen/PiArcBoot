@@ -221,6 +221,44 @@ static int install_thread(void *p)
 	return 0;
 }
 
+static char setup_id[80], setup_title[128];    /* a game added by hand whose installer is running */
+
+static int setup_thread(void *p)
+{
+	game_t g;
+
+	(void)p;
+	if (store_load(setup_id, &g) || run_installer(&g, g.id, &progress) < 0)
+		progress.done = -1;
+	else
+	{
+		store_save(&g);
+		progress.done = 1;
+	}
+	return 0;
+}
+
+/* A game added by hand that its presets give an installer has it run, as a JASPP game's is when
+   it installs. 1 if it has started. */
+static int start_setup(const char *id)
+{
+	char path[1100];
+	game_t g;
+
+	store_game_path(id, "installed", path, sizeof path);
+	if (store_load(id, &g) || is_dir(path) || !has_installer(&g, id))
+		return 0;
+	snprintf(setup_id, sizeof setup_id, "%s", id);
+	snprintf(setup_title, sizeof setup_title, "%s", g.title);
+	memset(&progress, 0, sizeof progress);
+	progress.percent = -1;
+	snprintf(progress.step, sizeof progress.step, "Getting ready...");
+	snprintf(progress.error, sizeof progress.error, "The game's installer couldn't run.");
+	dlg = DLG_PROGRESS;
+	SDL_DetachThread(SDL_CreateThread(setup_thread, "setup", NULL));
+	return 1;
+}
+
 /* Brings the feed up to date, then finds out which of the games new to it have floppy images,
    and fetches the PackMan sources' indexes for the Classics tab */
 static int feed_thread(void *p)
@@ -266,7 +304,7 @@ static void add_files(char **files, int n)
 		close_settings();
 		reload_games();
 		icon_forget(dlg_game.id);
-		if (!store_load(dlg_game.id, &g))
+		if (!start_setup(dlg_game.id) && !store_load(dlg_game.id, &g))
 			open_settings(&g);
 		return;
 	}
@@ -279,7 +317,7 @@ static void add_files(char **files, int n)
 	}
 	reload_games();
 	tab = TAB_MINE;
-	if (!store_load(id, &g))
+	if (!start_setup(id) && !store_load(id, &g))
 		open_settings(&g);              /* a new game opens on its settings, to be named and given its icon */
 }
 
@@ -804,7 +842,7 @@ static void draw_dialog(int win_w, int win_h)
 	if (y < 4)
 		y = 4;
 	snprintf(title, sizeof title, "%s", dlg == DLG_SETTINGS ? "" : "Install ");
-	snprintf(title + strlen(title), sizeof title - strlen(title), "%s%s", dlg == DLG_SETTINGS ? dlg_game.title : dlg_classic ? dlg_classic_entry.title : dlg_entry.title,
+	snprintf(title + strlen(title), sizeof title - strlen(title), "%s%s", dlg == DLG_SETTINGS ? dlg_game.title : setup_id[0] ? setup_title : dlg_classic ? dlg_classic_entry.title : dlg_entry.title,
 		 dlg == DLG_SETTINGS ? " settings" : "");
 	closed = rg_dialogue(x, y, w, h, title);
 	cx = x + 22;                    /* where the contents start */
@@ -842,13 +880,22 @@ static void draw_dialog(int win_w, int win_h)
 		}
 		if (progress.done == 1)
 		{
-			icon_forget(install_id());
+			game_t g;
+
+			icon_forget(setup_id[0] ? setup_id : install_id());
 			reload_games();
-			scroll[0] = 0;
 			dlg = DLG_NONE;
+			if (!setup_id[0])
+				scroll[0] = 0;
+			else if (!store_load(setup_id, &g))
+				open_settings(&g);      /* as a new game does, to be named and given its icon */
+			setup_id[0] = 0;
 		}
 		else if (progress.done == -1)
+		{
 			message(progress.error, RG_ERROR);
+			setup_id[0] = 0;
+		}
 		break;
 
 		case DLG_SETTINGS:

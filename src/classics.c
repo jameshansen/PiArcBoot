@@ -378,15 +378,18 @@ static int pack(adfs_file_t *f, int n, const char *boot, int *disc)
 }
 
 /* A RISC OS path as HostFS names it on the computer: the folders' . and the name's own / change
-   places, and a file's type follows a comma, or its load and execution addresses for one with no
-   type. 1 for a name that would leave the folder (a part that comes out as . or ..). */
+   places, a hard space is a space, ? < > are # $ ^, and a file's type follows a comma, or its load
+   and execution addresses for one with no type. 1 for a name that would leave the folder (a part
+   that comes out as . or ..). */
 static int host_name(const adfs_file_t *f, char *out, size_t size)
 {
+	static const char from[] = "./\\\xA0?<>", to[] = "/._ #$^";
 	size_t i, k = 0, part = 0;
 
 	for (i = 0; f->path[i] && k + 1 < size; i++)
 	{
-		char ch = f->path[i] == '.' ? '/' : f->path[i] == '/' ? '.' : f->path[i] == '\\' ? '_' : f->path[i];
+		const char *swap = strchr(from, f->path[i]);
+		char ch = swap ? to[swap - from] : f->path[i];
 
 		out[k++] = ch;
 		if (ch == '/' || !f->path[i + 1])
@@ -429,23 +432,34 @@ static int put_file(const char *path, const void *data, size_t len)
    HostFS shows the machine, hostfs/, with the pack's !Boot, !System and !Scrap beside it. The
    pack's extrom/ folder, and HostFS itself, make the extension ROM the machine starts with,
    extrom/. support is "" for no pack. */
+int write_hostfs(const char *dir, const adfs_file_t *f, int n)
+{
+	char path[1400], name[1024];
+	int i;
+
+	for (i = 0; i < n; i++)
+	{
+		if (host_name(&f[i], name, sizeof name))
+			continue;
+		snprintf(path, sizeof path, "%s/%s", dir, name);
+		if (f[i].dir ? make_dirs(path) : put_file(path, f[i].data, f[i].len))
+			return -1;
+	}
+	return 0;
+}
+
 static int install_hostfs(const char *title, const char *support, const adfs_file_t *f, int n, const char *part, progress_t *p)
 {
-	char path[1400], url[600], name[1024];
+	char path[1400], url[600];
 	zipent_t *ents;
 	uint8_t *zip;
 	size_t len;
 	int i, m;
 
 	snprintf(p->step, sizeof p->step, "Putting %s in its folder...", title);
-	for (i = 0; i < n; i++)
-	{
-		if (host_name(&f[i], name, sizeof name))
-			continue;
-		snprintf(path, sizeof path, "%s/hostfs/%s", part, name);
-		if (f[i].dir ? make_dirs(path) : put_file(path, f[i].data, f[i].len))
-			return fail(p, "The game's files can't be saved.");
-	}
+	snprintf(path, sizeof path, "%s/hostfs", part);
+	if (write_hostfs(path, f, n))
+		return fail(p, "The game's files can't be saved.");
 	snprintf(path, sizeof path, "%s/extrom/HostFS,ffa", part);
 	if (put_file(path, hostfs_module, sizeof hostfs_module))
 		return fail(p, "The game's files can't be saved.");
@@ -696,6 +710,248 @@ int preset_setting(const char *id, const char *key, char *buf, size_t size)
 	}
 	free(text);
 	return found;
+}
+
+/* ---- Installers ----
+
+   A game that came with a hard disc installer has presets/<game>.install, the files its installer
+   copies from its discs and where they go (presets/README.md). run_installer copies them from the
+   disc images onto the game's HostFS folder, and keeps them in installed/, which deploy_installed
+   puts back as the game's HostFS folder whenever that is missing. */
+
+static int same_name(const char *a, const char *b)
+{
+	for (; *a && tolower((unsigned char)*a) == tolower((unsigned char)*b); a++, b++);
+	return !*a && !*b;
+}
+
+/* The files on one of a game's discs, from 0, or -1 if it can't be read */
+static int disc_files(const game_t *g, int k, adfs_file_t **files)
+{
+	char path[1100];
+	size_t len;
+	uint8_t *img;
+	int n;
+
+	store_game_path(g->id, g->disc[k], path, sizeof path);
+	img = disc_sectors(path, &len);
+	n = img ? adfs_read(img, len, files, NULL, NULL) : -1;
+	free(img);
+	return n;
+}
+
+/* What of path is inside the folder or file pattern names, from the first part of it in, or NULL
+   if it isn't there. Parts compare without regard to case, with # for any one character, and an
+   empty pattern is the disc's root. */
+static const char *inside(const char *path, const char *pattern)
+{
+	if (!*pattern)
+		return path;
+	for (; *pattern; path++, pattern++)
+		if (*pattern == '.' ? *path != '.' : !*path || *path == '.' ||
+		    (*pattern != '#' && tolower((unsigned char)*pattern) != tolower((unsigned char)*path)))
+			return NULL;
+	return !*path ? path : *path == '.' ? path + 1 : NULL;
+}
+
+/* The copy list for the game with that id, or for a game added by hand the one whose
+   presets/<game>.ini has a match= line naming files that are all at the root of its first disc,
+   with # for any one character */
+static char *installer_list(const game_t *g, const char *id, char *buf, size_t size)
+{
+	char name[200], dir[1024], match[400];
+	adfs_file_t *files;
+	struct dirent *d;
+	DIR *dd;
+	int n, i;
+
+	snprintf(name, sizeof name, "presets/%s.install", id);
+	if (store_asset(name, buf, size))
+		return buf;
+	if (!g->ndiscs || !store_asset("presets", dir, sizeof dir))
+		return NULL;
+	n = disc_files(g, 0, &files);
+	dd = n > 0 ? opendir(dir) : NULL;
+	while (dd && (d = readdir(dd)))
+	{
+		size_t len = strlen(d->d_name);
+		char other[100], *word;
+		const char *rest;
+		int all = 1;
+
+		if (len < 5 || len >= sizeof other || strcmp(d->d_name + len - 4, ".ini"))
+			continue;
+		snprintf(other, sizeof other, "%.*s", (int)(len - 4), d->d_name);
+		if (!preset_setting(other, "match", match, sizeof match))
+			continue;
+		for (word = match + strspn(match, " \t"); *word && all; word += strspn(word, " \t"))
+		{
+			size_t wlen = strcspn(word, " \t");
+			char one = word[wlen];
+
+			word[wlen] = 0;
+			for (i = 0; i < n && (!(rest = inside(files[i].path, word)) || *rest); i++);
+			all = i < n;
+			word[wlen] = one;
+			word += wlen;
+		}
+		snprintf(name, sizeof name, "presets/%s.install", other);
+		if (all && store_asset(name, buf, size))
+		{
+			closedir(dd);
+			adfs_free(files, n);
+			return buf;
+		}
+	}
+	if (dd)
+		closedir(dd);
+	adfs_free(files, n);
+	return NULL;
+}
+
+int has_installer(const game_t *g, const char *id)
+{
+	char list[1024];
+
+	return installer_list(g, id, list, sizeof list) != NULL;
+}
+
+/* Copies a game's files from its discs onto its HostFS folder, as the copy list its presets give
+   it says, with id the game's own (a JASPP game's folder is <id>.part while it installs). Each
+   line is "copy <disc> <from> <to>", a folder with all in it or a file, and a later copy takes the
+   place of an earlier one of the same name. 0 when it installed or there is no list, 1 when it
+   can't yet for want of a disc the game doesn't have, -1 with p->error saying why when it failed.
+   A game whose install fails still plays from its floppies. */
+int run_installer(game_t *g, const char *id, progress_t *p)
+{
+	char list[1024], dir[1024], path[1300], hostfs[1100], *text, *line, *next;
+	adfs_file_t *disc[MAX_DISCS], *out = NULL;
+	int ndisc[MAX_DISCS], nout = 0, result = 0, installed = 0, i;
+	DIR *d;
+	struct dirent *e;
+
+	if (!installer_list(g, id, list, sizeof list) || !(text = (char *)file_read(list, NULL)))
+		return 0;
+	/* the game takes the presets of the list it matched, for its keys and screen mode */
+	snprintf(g->preset, sizeof g->preset, "%.*s", (int)strlen(base_name(list)) - 8, base_name(list));
+	for (i = 0; i < MAX_DISCS; i++)
+		ndisc[i] = -2;          /* not read yet */
+	for (line = text; line && *line && !result; line = next)
+	{
+		char from[300], to[300];
+		const char *a, *b;
+		int k, j, m;
+
+		next = strchr(line, '\n');
+		if (next)
+			*next++ = 0;
+		line[strcspn(line, "\r")] = 0;
+		if (sscanf(line, " copy %d %299s %299[^\n]", &k, from, to) != 3 || from[0] != '$' || to[0] != '$')
+			continue;
+		if (k < 1 || k > g->ndiscs)
+		{
+			result = 1;
+			break;
+		}
+		if (ndisc[k - 1] == -2)
+			ndisc[k - 1] = disc_files(g, k - 1, &disc[k - 1]);
+		if (ndisc[k - 1] < 0)
+		{
+			snprintf(p->error, sizeof p->error, "The game's disc %d can't be read.", k);
+			result = -1;
+			break;
+		}
+		a = from[1] == '.' ? from + 2 : from + 1;
+		b = to[1] == '.' ? to + 2 : to + 1;
+		for (j = 0; j < ndisc[k - 1]; j++)
+		{
+			const adfs_file_t *f = &disc[k - 1][j];
+			const char *rest = inside(f->path, a);
+
+			if (!rest)
+				continue;
+			snprintf(path, sizeof path, "%s%s%s", b, b[0] && rest[0] ? "." : "", rest);
+			for (m = 0; m < nout && !same_name(out[m].path, path); m++);
+			if (m == nout)
+			{
+				out = realloc(out, (size_t)(nout + 1) * sizeof *out);
+				memset(&out[nout++], 0, sizeof *out);
+			}
+			else
+			{
+				free((char *)out[m].path);
+				free((uint8_t *)out[m].data);
+			}
+			out[m] = *f;
+			out[m].path = strdup(path);
+			out[m].data = f->dir ? NULL : memcpy(malloc(f->len ? f->len : 1), f->data, f->len);
+		}
+	}
+	free(text);
+	for (i = 0; i < MAX_DISCS; i++)
+		if (ndisc[i] >= 0)
+			adfs_free(disc[i], ndisc[i]);
+	if (!result && !nout)
+	{
+		snprintf(p->error, sizeof p->error, "The game's presets copy nothing from its discs.");
+		result = -1;
+	}
+	store_game_path(g->id, "", dir, sizeof dir);
+	snprintf(hostfs, sizeof hostfs, "%s/hostfs", dir);
+	snprintf(list, sizeof list, "%s/installed", dir);
+	if (!result)
+	{
+		remove_tree(hostfs);
+		remove_tree(list);
+		if (install_hostfs(g->title, "", out, nout, dir, p))
+		{
+			p->done = 0;    /* it isn't over: the game still plays from its floppies */
+			result = -1;
+		}
+	}
+	adfs_free(out, nout);
+	if (result)
+		return result;
+
+	/* The game starts from the application it installed by its name, whatever its case, or else
+	   the first it installed. A space in the name is RISC OS's # here, as it goes on a command line. */
+	path[0] = 0;
+	d = opendir(hostfs);
+	while (d && (e = readdir(d)))
+		if (e->d_name[0] != '.')
+		{
+			const char *x = e->d_name, *y = g->boot;
+
+			for (; *x && *y && (*y == '#' || tolower((unsigned char)*x) == tolower((unsigned char)*y)); x++, y++);
+			if (e->d_name[0] == '!' && installed < 2 && (!path[0] || (!*x && !*y)))
+				snprintf(path, 64, "%s", e->d_name);
+			installed = installed == 2 || (!*x && !*y) ? 2 : 1;
+		}
+	if (d)
+		closedir(d);
+	for (i = 0; path[i]; i++)
+		if (path[i] == ' ')
+			path[i] = '#';
+	if (path[0])
+		snprintf(g->boot, sizeof g->boot, "%s", path);
+	if (!installed || copy_tree(hostfs, list))
+	{
+		remove_tree(hostfs);
+		remove_tree(list);
+		return snprintf(p->error, sizeof p->error, "The game's files can't be saved."), -1;
+	}
+	return 0;
+}
+
+/* The game's HostFS folder put back from what its installer installed, when the folder is missing */
+void deploy_installed(const char *id)
+{
+	char installed[1100], hostfs[1100];
+
+	store_game_path(id, "installed", installed, sizeof installed);
+	store_game_path(id, "hostfs", hostfs, sizeof hostfs);
+	if (is_dir(installed) && !is_dir(hostfs) && copy_tree(installed, hostfs))
+		remove_tree(hostfs);
 }
 
 int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)

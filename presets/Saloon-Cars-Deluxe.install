@@ -1,0 +1,11 @@
+# What Saloon Cars Deluxe's Hard Disc Installer copies: the game from disc 1, the rest of its
+# PROTECT folder from disc 2, and all of disc 3, the courses, into its DISC2 folder
+copy 1 $.!SALOON $.!Saloon
+copy 2 $.!SALOON.PROTECT.ANIMATE $.!Saloon.PROTECT.ANIMATE
+copy 2 $.!SALOON.PROTECT.FRMS3 $.!Saloon.PROTECT.FRMS3
+copy 2 $.!SALOON.PROTECT.FRMS4 $.!Saloon.PROTECT.FRMS4
+copy 2 $.!SALOON.PROTECT.M2 $.!Saloon.PROTECT.M2
+copy 2 $.!SALOON.PROTECT.MESS $.!Saloon.PROTECT.MESS
+copy 2 $.!SALOON.PROTECT.MNU $.!Saloon.PROTECT.MNU
+copy 2 $.!SALOON.PROTECT.PODIUM $.!Saloon.PROTECT.PODIUM
+copy 3 $ $.!Saloon.DISC2

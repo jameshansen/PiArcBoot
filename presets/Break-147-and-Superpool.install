@@ -1,0 +1,8 @@
+# What Break 147 & Superpool's Hard Disc Installer copies: the two games from disc 1, and each
+# one's data disc into Break 147's folder
+copy 1 $.!Break_147 $.!Break_147
+copy 1 $.!README $.!ReadMe
+copy 1 $.!RunToRead $.!RunToRead
+copy 1 $.!S_Pool $.!S_Pool
+copy 2 $.!DEDATA $.!Break_147.!DEDATAs
+copy 3 $.!DEDATA $.!Break_147.!DEDATAp

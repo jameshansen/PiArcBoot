@@ -39,6 +39,7 @@ extern int emu_host_tasks;      /* tasks it has seen start in the desktop */
 extern int emu_host_modes_at_run, emu_host_errors_at_run, emu_host_tasks_at_run;      /* those counts when it last took up a command to start, or -1 */
 extern int emu_host_vidc_at_run;        /* and machine_mode_sets then */
 extern int emu_host_clicked, emu_host_missed;  /* icon bar clicks made, and asked for with no such icon */
+extern int emu_host_nwins, emu_host_wins[31][4];        /* the windows on the screen as it last said: x0, y0, x1, y1 in OS units */
 void emu_host_run(const char *command);        /* start a *command as a task in the desktop */
 void emu_host_click(const char *sprite);       /* click the icon bar icon with that sprite on it */
 void emu_host_forget(void);                     /* drop what hasn't been sent yet */
@@ -55,6 +56,7 @@ void machine_close(void);       /* writes back what games saved to their discs *
 /* disc.c: disc images */
 uint8_t *jfd_read(const char *path, size_t *len);       /* the file, unpacked if it is gzip compressed */
 uint8_t *jfd_flatten(const char *path, size_t *len);    /* a JFD as a flat image of its sectors */
+uint8_t *disc_sectors(const char *path, size_t *len);   /* any disc image as ADFS sees its sectors, each where ADFS looks for it */
 int disc_selftest(void);
 
 /* adfs.c: ADFS D format floppy images made from files */
@@ -72,6 +74,7 @@ int adfs_from_zip(const uint8_t *zip, size_t len, const char *prefix, adfs_file_
 void adfs_free(adfs_file_t *files, int n);
 int adfs_selftest(void);
 int adfs_app_root(adfs_file_t *files, int n);   /* the folder an archive's applications are in made the top */
+int adfs_read(const uint8_t *img, size_t len, adfs_file_t **out, char *disc_name, int *boot_option);   /* the files on an L, D or E format disc */
 
 /* arc.c: Spark and ArcFS archives */
 int arc_is_archive(const uint8_t *data, size_t len);
@@ -101,6 +104,7 @@ char *run_output(const char *fmt, ...);
 int make_dirs(const char *path);
 int is_dir(const char *path);
 void remove_tree(const char *path);
+int copy_tree(const char *from, const char *to);
 const char *base_name(const char *path);
 
 /* icon.c */
@@ -130,12 +134,14 @@ typedef struct
 	char boot[64];          /* the application to run, or "" for a disc that boots with Shift held */
 	char version[32];       /* a JASPP package's version */
 	char sprite[16];        /* the sprite its icon is made from, when one was picked by hand */
+	char preset[80];        /* the presets it takes when they aren't named after its id, for one added by hand that its first disc matched */
 	int fdc;                /* 1 for the 82C711 floppy controller */
 	int jaspp;              /* 1 from the JASPP list, 0 one of the user's own */
 	int classic;            /* 1 from the Classics tab */
 	int apps;               /* 1 made from an archive of applications: it starts as a Classics game does */
 	int scale;              /* window size, 1 to 3 */
 	int fullscreen;
+	int crop;               /* 1 shows just the windows on the screen, 0 all of it, -1 as its presets say */
 	int nocapture;          /* the mouse isn't captured: the pointer goes where the host's is */	int desktop, menu;      /* has a desktop shortcut, a menu entry */
 	int ndiscs;
 	char disc[MAX_DISCS][40];       /* the disc image files in its folder */
@@ -204,6 +210,10 @@ typedef struct
    describes. 1 with its value in buf if the game's file has the key. */
 int preset_setting(const char *id, const char *key, char *buf, size_t size);
 const char *needs_support(const adfs_file_t *files, int n);     /* the support pack their !Run files ask for, or "" */
+int write_hostfs(const char *dir, const adfs_file_t *f, int n);  /* files written in a folder as HostFS names them; 0 when all were */
+int has_installer(const game_t *g, const char *id);             /* its presets have an installer script for it */
+int run_installer(game_t *g, const char *id, progress_t *p);    /* its files copied from its discs onto its HostFS folder, kept in installed/ */
+void deploy_installed(const char *id);
 
 int classic_count(void);
 const classic_t *classic_entry(int i);

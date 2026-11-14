@@ -46,7 +46,11 @@ for f in $(for a in $ARCEM; do echo "arcem/$a"; done) $(cd "$HERE" && ls src/*.c
   objs="$objs $(basename "$o")"
 done
 cd "$OBJ"       # the objects are named without their folder, which may have a space in it
-zig cc -target x86_64-windows-gnu -o "$OUT/piarcboot.exe" $objs -lmingw32 \
+# The program's icon, which Explorer and the shortcuts to it show: icon.png at sizes up to its own
+cp "$HERE/icon.ico" .
+printf '1 ICON "icon.ico"\n' > piarcboot.rc
+zig rc piarcboot.rc piarcboot.res
+zig cc -target x86_64-windows-gnu -o "$OUT/piarcboot.exe" $objs piarcboot.res -lmingw32 \
   "$SDL/lib/libSDL2main.a" "$SDL/lib/libSDL2.dll.a" "$ZLIB/libz.dll.a" "$GUI/build/win/libroogui.dll.a" -lcomdlg32 -lshell32 -Wl,--subsystem,windows
 cp "$SDL/bin/SDL2.dll" "$ZLIB/zlib1.dll" "$GUI/build/win/roogui.dll" "$OUT/"
 cp "$GUI/LICENSE" "$OUT/LICENSE-ROOGUI"
