@@ -1,7 +1,7 @@
 # Builds PiArcBoot on every push: for 64-bit Raspberry Pi OS on an ARM runner, for x86-64 Linux, and
 # for 64-bit Windows with zig. A version tag (v1.2.3) also publishes the three as a release of that
-# name, with docs/releases/v1.2.3.md and docs/releases/install.md as its notes, and the About tab
-# shows the tag's version.
+# name, its notes a table of the downloads (docs/releases/download.md, with the tag filled in) and
+# then docs/releases/v1.2.3.md, and the About tab shows the tag's version.
 name: Build
 
 on:
@@ -114,7 +114,8 @@ jobs:
             echo "::error::docs/releases/$TAG.md is missing. Write the release notes before tagging."
             exit 1
           fi
-          { cat "docs/releases/$TAG.md"; echo; cat docs/releases/install.md; } > notes.md
+          # They open with a table of the downloads for each system, linked to this release's files
+          { sed "s/{TAG}/$TAG/g" docs/releases/download.md; cat "docs/releases/$TAG.md"; } > notes.md
           files="out/PiArcBoot.tar.gz out/PiArcBoot-Linux-x86-64.tar.gz out/PiArcBoot-Windows.zip"
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" $files --clobber
