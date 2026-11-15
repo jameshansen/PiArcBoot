@@ -26,6 +26,7 @@
 #define BAR_W 20                /* width of the scroll bar */
 #define MAX_THUMBS 20
 #define TAB_W 122
+#define TABS_Y 46               /* the top of the tab in front, under the search field */
 #define JASPP_URL "https://forums.jaspp.org.uk/"
 
 enum { DLG_NONE, DLG_INSTALL, DLG_PROGRESS, DLG_SETTINGS, DLG_MESSAGE, DLG_CONFIRM };
@@ -38,6 +39,27 @@ static int tab;
 static int scroll[TABS], content_h[TABS];
 static int quit;
 static SDL_Texture *app_tex;            /* PiArcBoot's own icon, for the About tab */
+static char search[64];                 /* what the search field holds: each tab shows only the games that match it */
+static int source_focus;                /* the caret is in the field for a new PackMan source, not the search field */
+
+/* Whether a game's title or its line of information holds the search, in any case */
+static int matches(const char *title, const char *info)
+{
+	const char *const text[2] = { title, info };
+	int t;
+	size_t i, k;
+
+	if (!search[0])
+		return 1;
+	for (t = 0; t < 2; t++)
+		for (i = 0; text[t] && text[t][i]; i++)
+		{
+			for (k = 0; search[k] && tolower((unsigned char)text[t][i + k]) == tolower((unsigned char)search[k]); k++);
+			if (!search[k])
+				return 1;
+		}
+	return 0;
+}
 
 static int dlg;
 static entry_t dlg_entry;
@@ -386,14 +408,6 @@ static int credit(int x, int y, int w, const char *lead, const char *name, const
 	return 52;
 }
 
-/* The line over the JASPP list. Its height is kept for jump_to_typed. */
-static int draw_jaspp_height = 30;
-
-static int draw_jaspp_heading(int x, int y, int w)
-{
-	return draw_jaspp_height = credit(x, y, w, "Archimedes Games available from the ", "Archimedes Software Preservation Project", JASPP_URL);
-}
-
 /* Text broken at spaces to lines no wider than w, drawn or only measured. Returns the height it takes. */
 static int wrap(int font, int x, int y, int w, uint32_t rgb, const char *text, int draw)
 {
@@ -517,7 +531,7 @@ static int draw_classics(int x, int y, int w)
 				game_t *g = installed(c->id);
 				int hit;
 
-				if (c->section != s || (g != NULL) != (pass == 0))
+				if (c->section != s || (g != NULL) != (pass == 0) || !matches(g ? g->title : c->title, g ? g->info : c->info))
 					continue;
 				if (!head)
 				{
@@ -544,12 +558,15 @@ static int draw_classics(int x, int y, int w)
 		}
 		if (!any)
 		{
-			rg_text(SMALL, x + 2, y + 2, rg_colour(6), "The sources' lists arrive once the network is reached.");
+			rg_text(SMALL, x + 2, y + 2, rg_colour(6), search[0] ? "None of its games match the search." :
+				"The sources' lists arrive once the network is reached.");
 			y += 24;
 		}
 		y += 8;
 	}
 
+	if (search[0])          /* a search shows the games alone */
+		return y - top;
 	rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), "PackMan sources");
 	y += 30;
 	n = classics_sources(urls, 32);
@@ -563,8 +580,10 @@ static int draw_classics(int x, int y, int w)
 		}
 		y += 34;
 	}
-	rg_field(x, y, w - BTN_W - 16, 26, new_source, sizeof new_source, 1);
-	if (rg_button(x + w - BTN_W, y, BTN_W, BTN_H, "Add", new_source[0] != 0) || (rg_in.key == SDLK_RETURN && new_source[0]))
+	if (rg_in.pressed)
+		source_focus = rg_over(x, y, w - BTN_W - 16, 26);       /* a click in it gives it the caret, and anywhere else takes it away */
+	rg_field(x, y, w - BTN_W - 16, 26, new_source, sizeof new_source, source_focus);
+	if (rg_button(x + w - BTN_W, y, BTN_W, BTN_H, "Add", new_source[0] != 0) || (source_focus && rg_in.key == SDLK_RETURN && new_source[0]))
 	{
 		classics_add_source(new_source);
 		new_source[0] = 0;
@@ -573,6 +592,25 @@ static int draw_classics(int x, int y, int w)
 	y += 34;
 	rg_text(SMALL, x + 2, y, rg_colour(6), "A source is the address of a PackMan package index, as PackMan's Sources window takes it.");
 	return y + 24 - top;
+}
+
+/* How many games a tab other than About shows for the search */
+static int tab_count(int t)
+{
+	int i, n = 0;
+
+	for (i = 0; t != TAB_CLASSICS && i < n_games; i++)
+		n += (t == TAB_JASPP ? games[i].jaspp : !games[i].jaspp && !games[i].classic) && matches(games[i].title, games[i].info);
+	for (i = 0; t == TAB_JASPP && i < catalog_count(); i++)
+		n += !installed(catalog_entry(i)->id) && catalog_entry(i)->floppies > 0 && matches(catalog_entry(i)->title, catalog_entry(i)->info);
+	for (i = 0; t == TAB_CLASSICS && i < classic_count(); i++)
+	{
+		const classic_t *c = classic_entry(i);
+		const game_t *g = installed(c->id);
+
+		n += matches(g ? g->title : c->title, g ? g->info : c->info);
+	}
+	return n;
 }
 
 static rg_window_t list;        /* the pane the list is in: a work area with its scroll bar */
@@ -613,15 +651,15 @@ static int draw_list(int vx, int vy, int vw, int vh)
 		y += draw_classics(x, y, w);
 	else if (tab == TAB_JASPP)
 	{
-		y += draw_jaspp_heading(x + 2, y + 4, w - 4);
+		y += credit(x + 2, y + 4, w - 4, "Archimedes Games available from the ", "Archimedes Software Preservation Project", JASPP_URL);
 		for (i = 0; i < n_games; i++)
-			any |= games[i].jaspp;
+			any |= games[i].jaspp && matches(games[i].title, games[i].info);
 		if (any)
 		{
 			rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), "Installed");
 			y += 30;
 			for (i = 0; i < n_games; i++)
-				if (games[i].jaspp)
+				if (games[i].jaspp && matches(games[i].title, games[i].info))
 				{
 					if (y + ROW_H > vy && y < vy + vh)
 					{
@@ -633,15 +671,19 @@ static int draw_list(int vx, int vy, int vw, int vh)
 				}
 			y += 4;
 		}
-		rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), "Available");
-		y += 30;
 		for (i = 0; i < catalog_count(); i++)
 		{
 			const entry_t *e = catalog_entry(i);
 			char info[200];
 
-			if (installed(e->id) || e->floppies <= 0)       /* nothing to install a game from: not listed */
+			if (installed(e->id) || e->floppies <= 0 || !matches(e->title, e->info))       /* nothing to install a game from: not listed */
 				continue;
+			if (any < 2)
+			{
+				rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), "Available");
+				y += 30;
+				any = 2;
+			}
 			if (y + ROW_H > vy && y < vy + vh)
 			{
 				snprintf(info, sizeof info, "%s%s", e->info, e->tested ? "" : e->info[0] ? ", new on JASPP and untested" : "New on JASPP and untested");
@@ -654,11 +696,16 @@ static int draw_list(int vx, int vy, int vw, int vh)
 			}
 			y += ROW_H + 8;
 		}
+		if (!any && search[0])
+		{
+			rg_text(SMALL, x + 2, y + 2, rg_colour(6), "No games match the search.");
+			y += 24;
+		}
 	}
 	else
 	{
 		for (i = 0; i < n_games; i++)
-			if (!games[i].jaspp && !games[i].classic)
+			if (!games[i].jaspp && !games[i].classic && matches(games[i].title, games[i].info))
 			{
 				if (y + ROW_H > vy && y < vy + vh)
 				{
@@ -669,6 +716,11 @@ static int draw_list(int vx, int vy, int vw, int vh)
 				y += ROW_H + 8;
 				any = 1;
 			}
+		if (!any && search[0])
+		{
+			rg_text(SMALL, x + 2, y + 2, rg_colour(6), "None of your games match the search.");
+			y += 24;
+		}
 		y += 14;
 		if (rg_button(vx + (vw - 110) / 2, y, 110, BTN_H, "Add Game...", 1))
 		{
@@ -683,7 +735,7 @@ static int draw_list(int vx, int vy, int vw, int vh)
 			free(files);
 		}
 		y += BTN_H + 12;
-		rg_text_centre(SMALL, vx, y, vw, 14, rg_colour(6), any ? "Disc images and archives can also be dropped onto this window." :
+		rg_text_centre(SMALL, vx, y, vw, 14, rg_colour(6), any || search[0] ? "Disc images and archives can also be dropped onto this window." :
 			       "Add a game from its disc images (JFD, ADF, ADL or HFE) or an archive of its applications (zip, Spark or ArcFS).");
 		y += 20;
 	}
@@ -693,47 +745,6 @@ static int draw_list(int vx, int vy, int vw, int vh)
 
 	content_h[tab] = y + scroll[tab] - vy + 4;
 	return content_h[tab] != before;
-}
-
-/* Typing letters on the JASPP tab jumps to the first game not yet installed whose title starts with them */
-static void jump_to_typed(void)
-{
-	static char typed[32];
-	static Uint32 last;
-	int i, y = 38 + draw_jaspp_height, any = 0;
-	size_t k;
-
-	if (!rg_in.text[0] || tab != TAB_JASPP)
-		return;
-	if (SDL_GetTicks() - last > 1000)
-		typed[0] = 0;
-	last = SDL_GetTicks();
-	snprintf(typed + strlen(typed), sizeof typed - strlen(typed), "%s", rg_in.text);
-	for (i = 0; i < n_games; i++)
-		if (games[i].jaspp)
-		{
-			y += ROW_H + 8;
-			any = 1;
-		}
-	if (any)
-		y += 34;
-	for (i = 0; i < catalog_count(); i++)
-	{
-		const entry_t *e = catalog_entry(i);
-		const char *t = e->title;
-
-		if (installed(e->id) || e->floppies <= 0)
-			continue;
-		if (!strncmp(t, "The ", 4))
-			t += 4;
-		for (k = 0; typed[k] && tolower((unsigned char)typed[k]) == tolower((unsigned char)t[k]); k++);
-		if (!typed[k])
-		{
-			scroll[0] = y - 8;
-			return;
-		}
-		y += ROW_H + 8;
-	}
 }
 
 /* What the launcher has to say or ask, in a box as Wimp_ReportError puts one up: the message
@@ -1000,7 +1011,9 @@ static void draw_tabs(void)
 
 	for (k = 0; k <= TABS; k++)     /* the ones behind first, then the one in front over their edges */
 	{
-		int front = k == TABS, i = front ? tab : k, x = 10 + i * (TAB_W - 1), y = front ? 8 : 12, h = 40 - y;
+		int front = k == TABS, i = front ? tab : k, x = 10 + i * (TAB_W - 1), y = front ? TABS_Y : TABS_Y + 4, h = TABS_Y + 32 - y;
+		int font = front ? RG_DESKTOP_BOLD : RG_DESKTOP, nw, cw, left;
+		char count[16] = "";
 
 		if (!front && i == tab)
 			continue;
@@ -1012,8 +1025,31 @@ static void draw_tabs(void)
 		}
 		else
 			rg_fill(x + 1, y + 1, TAB_W - 2, h - 2, rg_colour(2));
-		rg_text_centre(front ? RG_DESKTOP_BOLD : RG_DESKTOP, x, y, TAB_W, front ? 30 : 27, rg_colour(7), tab_names[i]);
+		if (search[0] && i != TAB_ABOUT)        /* how many of its games match, in red after its name */
+			snprintf(count, sizeof count, " (%d)", tab_count(i));
+		nw = rg_text_w(font, tab_names[i]);
+		cw = rg_text_w(font, count);
+		left = x + (TAB_W - nw - cw) / 2;
+		rg_text_centre(font, left, y, nw, front ? 30 : 27, rg_colour(7), tab_names[i]);
+		if (count[0])
+			rg_text_centre(font, left + nw, y, cw, front ? 30 : 27, rg_colour(RG_RED), count);
 	}
+}
+
+/* The search field over the tabs. It has the caret unless the field for a new PackMan source has. */
+static void draw_search(int w)
+{
+	int lw = rg_text_w(RG_DESKTOP, "Search:"), fw = w - 34 - lw;
+
+	if (fw > 280)
+		fw = 280;
+	rg_text_centre(RG_DESKTOP, 12, 10, lw, 28, rg_colour(7), "Search:");
+	if (rg_in.pressed)
+		source_focus = 0;               /* and the Classics tab gives it back for a click in its field */
+	if (!source_focus && rg_in.key == SDLK_ESCAPE)
+		search[0] = 0;
+	if (rg_field(20 + lw, 10, fw, 28, search, sizeof search, !source_focus))
+		memset(scroll, 0, sizeof scroll);       /* each list from its top for what it now shows */
 }
 
 int launcher_main(const char *test_script)
@@ -1046,6 +1082,7 @@ int launcher_main(const char *test_script)
 	while (!quit)
 	{
 		const char *shot = NULL, *drop = NULL;
+		char text[sizeof rg_in.text];
 		int w, h, px, py, pressed, released, wheel, key, i, was_open;
 		SDL_Event e;
 
@@ -1098,20 +1135,22 @@ int launcher_main(const char *test_script)
 		/* With a dialogue box open the window behind it is drawn but takes no input */
 		px = rg_in.x; py = rg_in.y; pressed = rg_in.pressed; released = rg_in.released; wheel = rg_in.wheel; key = rg_in.key;
 		was_open = dlg != DLG_NONE;
+		memcpy(text, rg_in.text, sizeof text);
 		if (was_open)
 		{
 			rg_in.x = rg_in.y = -1;
 			rg_in.pressed = rg_in.released = rg_in.wheel = rg_in.key = 0;
+			rg_in.text[0] = 0;
 		}
 		for (i = 0; i < TABS; i++)
-			if (rg_in.pressed && rg_over(10 + i * (TAB_W - 1), 8, TAB_W, 31))
+			if (rg_in.pressed && rg_over(10 + i * (TAB_W - 1), TABS_Y, TAB_W, 31))
 				tab = i;
-		if (dlg == DLG_NONE)
-			jump_to_typed();
-		if (draw_list(11, 40, w - 22 - BAR_W + 1, h - 51))
+		draw_search(w);
+		if (draw_list(11, TABS_Y + 32, w - 22 - BAR_W + 1, h - TABS_Y - 43))
 			drawn = 0;              /* once more, with the scroll bar the length the list makes it */
 		draw_tabs();
 		rg_in.x = px; rg_in.y = py; rg_in.pressed = pressed; rg_in.released = released; rg_in.wheel = wheel; rg_in.key = key;
+		memcpy(rg_in.text, text, sizeof text);
 		if (!was_open)          /* the click that opened a dialogue box doesn't press what is under it in the box */
 			rg_in.pressed = rg_in.released = rg_in.key = 0;
 
