@@ -38,7 +38,7 @@ static int n_games;
 static int tab;
 static int scroll[TABS], content_h[TABS];
 static int quit;
-static SDL_Texture *app_tex;            /* PiArcBoot's own icon, for the About tab */
+static SDL_Texture *app_tex;            /* PiArcBoot's own icon, for the About tab and the corner over the tabs */
 static char search[64];                 /* what the search field holds: each tab shows only the games that match it */
 static int source_focus;                /* the caret is in the field for a new PackMan source, not the search field */
 
@@ -1050,6 +1050,17 @@ static void draw_search(int w)
 		search[0] = 0;
 	if (rg_field(20 + lw, 10, fw, 28, search, sizeof search, !source_focus))
 		memset(scroll, 0, sizeof scroll);       /* each list from its top for what it now shows */
+
+	/* PiArcBoot's name and logo in the corner the field leaves */
+	{
+		int font = rg_font(RG_BOLD, 14 * 16), tw = rg_text_w(font, "PiArcBoot"), lx = w - 12 - 34;
+
+		if (lx - 10 - tw > 20 + lw + fw + 12)
+		{
+			rg_image(app_tex, lx, 6, 34, 34);
+			rg_text_centre(font, lx - 8 - tw, 6, tw, 34, rg_colour(7), "PiArcBoot");
+		}
+	}
 }
 
 int launcher_main(const char *test_script)

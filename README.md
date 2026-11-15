@@ -51,22 +51,32 @@ PiArcBoot contains none of the games. Install downloads each game's floppy image
 
 PiArcBoot is an unofficial project and isn't affiliated with JASPP or with RISC OS Open Ltd.
 
+## Save states
+
+Every game in PiArcBoot has 3 save slots, and each one holds the whole emulated machine as it was at the moment it was saved, along with a screenshot of it. You can save to any slot from the Saves menu, and one slot is also saved for you every 30 seconds of play.
+
+Once a game has saves, it opens on the selector instead of booting straight in, with the 3 slots side by side, their screenshots and how long ago each one was saved, and nothing runs until you pick one. Continue carries on from that save, New Game starts fresh in an empty slot, and whichever slot you pick becomes the one Auto Save writes to from then on. Erase deletes a save, after asking first.
+
+![Lemmings' save selector, with a different level saved in each of its 3 slots](docs/saves.png)
+
+Restoring a save puts back anything the game wrote to a floppy too, while files in a game's own folder stay as they are. A save made with a different ROM, or with a version of PiArcBoot whose emulated machine has changed, won't restore, and the game carries on as it was.
+
 ## Features
 
-- **Straight into the game.** The keys that start a game are pressed for it behind a splash screen, and the picture appears when the game puts up its first screen.
+- **Straight into the game.** A game starts with nothing to type or click to get it going.
 - **Every game is its own program**, with its own window, taskbar icon and shortcuts.
 - **Any window size, and full screen**, with the picture kept sharp at every size.
-- **Save states.** Every game gets 3 save slots, each one holding the whole machine as it was at that moment along with a screenshot of it. One slot is saved every 30 seconds of play without the game pausing, and a game with saves opens on all 3 side by side, so you can continue one or start a new game in an empty slot.
+- **Save states.** Every game gets 3 save slots, each one holding the whole machine as it was at that moment along with a screenshot of it. One slot is saved every 30 seconds of play, and a game with saves opens on all 3 side by side, so you can continue one or start a new game in an empty slot.
 - **Search** across the game lists, and each tab shows how many of its games match.
 - **Disc switching** from the Switch Floppy menu or with Ctrl, Alt and a number, and auto switch points, which change the disc by themselves when a game shows the screen that asks for it.
 - **Your own disc images.** Add Game on the My Games tab turns JFD, ADF, ADL and HFE images, the usual Archimedes disc image formats, or a zip of them, into games, with the discs put in order from their names.
-- **Your own archives.** A zip, Spark or ArcFS archive of RISC OS applications becomes a game too: its files go on floppy images, or in a folder the machine reads directly when they're too big for floppies or need the support pack, and it starts from the application named after the archive, or its biggest.
-- **Hard disc installs.** The games that came with a hard disc installer, such as Black Angel, Carnage Inc and Raw Power, have the files it would copy taken straight off their disc images as they install, or as their discs are added with Add Game, so they start from a folder the machine reads directly with no discs to swap. A copy of those files is kept, and the game starts from a fresh copy if its folder is ever removed.
+- **Your own archives.** A zip, Spark or ArcFS archive of RISC OS applications becomes a game too, starting from the application named after the archive, or its biggest.
+- **Hard disc installs.** The games that came with a hard disc installer, such as Black Angel, Carnage Inc and Raw Power, have the files it would copy taken straight off their disc images as they install, or as their discs are added with Add Game, so they start from a folder the machine reads directly with no discs to swap.
 - **Saves are kept** in a file beside each disc image, and the image itself is never changed. Any disc can be made read only.
-- **Crop to Window** for a game that plays in the RISC OS desktop: the picture is cropped to the game's windows, leaving out the icon bar and the desktop around them, and it follows them as they open, close and move. The desktop is 640 by 512 in 256 colours, as the Classics' is, and a small window of the game's is never blown up past the window's scale. The Game menu turns it on or off for any game, your own included, and the games that need it start with it on.
+- **Crop to Window** for a game that plays in the RISC OS desktop: the picture is cropped to the game's windows, leaving out the icon bar and the desktop around them, and it follows them as they open, close and move. The Game menu turns it on or off for any game, your own included, and the games that need it start with it on.
 - **Copy protection as the disc has it**, so the games' own disc checks pass.
 
-![Lemmings' first level in a window of its own, under its Game and Switch Floppy menus](docs/game.png)
+![Lemmings' first level in a window of its own, under its Game and Saves menus](docs/game.png)
 
 ## What works
 
@@ -160,7 +170,7 @@ The machine is [ArcEm](https://github.com/ArcEm-emu/ArcEm)'s, set up as an Archi
 
 The machine runs 25 million cycles to a second of its own time, a fixed rate rather than one measured against the host, so a game takes the same machine time on every computer and a test script gives the same result every time. The game window keeps it to real time a centisecond at a time.
 
-A game boots behind the splash screen with the machine running flat out. A disc that boots gets Shift held until it is first read. For any other disc, ROO311's HostLink module runs the application once the desktop is up, the way a double-click would. HostLink then reports a screen mode change when the game takes the screen, an error box when it asks for a disc, or a new desktop task, whose icon bar icon it clicks for a game that waits to be clicked. The splash stays up until one of those, so the desktop isn't seen on the way. HostLink also reports where the windows on the screen are, five times a second when they change, as it walks up the Wimp's window stack from the icon bar, and with Crop to Window on, the picture is cropped to the area they cover. A game that plays in the desktop has its icon clicked once its floppy drive has been still for a second.
+A game boots behind the splash screen with the machine running flat out. A disc that boots gets Shift held until it is first read. For any other disc, ROO311's HostLink module runs the application once the desktop is up, the way a double-click would. HostLink then reports a screen mode change when the game takes the screen, an error box when it asks for a disc, or a new desktop task, whose icon bar icon it clicks for a game that waits to be clicked. The splash stays up until one of those. HostLink also reports where the windows on the screen are, five times a second when they change, as it walks up the Wimp's window stack from the icon bar, and with Crop to Window on, the picture is cropped to the area they cover. A game that plays in the desktop has its icon clicked once its floppy drive has been still for a second.
 
 The floppy controller is a WD1772 written from its data sheet, with the disc turning under it at 300 rpm and each sector passing the head at its place on the track. A JFD image records each sector's place, size, number and CRC errors, which is how JASPP keeps a disc's copy protection, so the games' checks find what they would on the real disc. Botkiller 2 and the Risc PC version of Speedball 2 come on 1.6MB discs, so for those two the machine becomes an A5000, a later Archimedes, with its 82C711, whose 765 floppy controller is also written from its data sheet.
 
@@ -176,7 +186,7 @@ The hard disc installers of the games that came with one copy files from the gam
 
 What PiArcBoot knows about particular games is in `presets/`, not its code. A game can have files that Install adds to its own, such as the choices file that starts Star Fighter 3000 full screen where it would otherwise open in a desktop window, the files its hard disc installer copies, and settings: the support pack it needs, keys to press once it has started (Escape puts Meteors on the whole screen), the screen mode for a game that plays in the desktop (MODE 15 for Black Angel), or why a PackMan game is left out. `presets/README.md` describes them.
 
-The picture comes from ArcEm's display driver and is scaled by the graphics chip, with pixels repeated to the nearest whole size and only the edges between them blended, so it stays sharp at any window size. Sound is ArcEm's mix of the VIDC's 8 channels at 48 kHz, resampled slightly to keep about 80 ms queued. The launcher, the installer and the splash screen use [ROOGUI](https://github.com/jameshansen/ROOGUI), a separate library that draws the RISC OS look from RISC OS Open's sprites and fonts at any display scale.
+The picture comes from ArcEm's display driver and is scaled by the graphics chip. Sound is ArcEm's mix of the VIDC's 8 channels at 48 kHz. The launcher, the installer and the splash screen use [ROOGUI](https://github.com/jameshansen/ROOGUI), a separate library that draws the RISC OS look from RISC OS Open's sprites and fonts at any display scale.
 
 ## Building
 
