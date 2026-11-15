@@ -47,8 +47,13 @@ build/arcem/hostfs.o: ARCEM_DEFS += -D_LARGEFILE64_SOURCE
 # The picture's code is ArcEm's display driver, as fast as the machine
 build/src/screen.o: OPT := $(ARCEM_OPT)
 
-# launcher.o isn't rebuilt when only VERSION changes; a release builds from clean
-build/src/launcher.o: OPT += $(if $(VERSION),-DPIARCBOOT_VERSION='"$(VERSION)"')
+# launcher.o and setup.o aren't rebuilt when only VERSION changes; a release builds from clean
+build/src/launcher.o build/src/setup.o: OPT += $(if $(VERSION),-DPIARCBOOT_VERSION='"$(VERSION)"')
+
+# The front of the installer, which unpacks the PiArcBoot folder packed behind it (tools/mkinstaller.py)
+build/stub: tools/stub.c
+	@mkdir -p build
+	$(CC) -O2 -Wall -o $@ $<
 
 build/src/%.o: src/%.c $(wildcard src/*.h) $(ARCEM_H) $(ROOGUI)/src/roogui.h
 	@mkdir -p build/src

@@ -332,6 +332,8 @@ int main(int argc, char **argv)
 		return cmd_mkicons(argc - 2, argv + 2);
 	if (!strcmp(cmd, "icon"))
 		return cmd_icon(argc - 2, argv + 2);
+	if (!strcmp(cmd, "setup"))
+		return setup_main(argc - 2, argv + 2, script);
 	if (!strcmp(cmd, "check"))
 		return cmd_check();
 	if (!strcmp(cmd, "arc") && argc > 2)            /* the files in a Spark or ArcFS archive, for the test scripts */

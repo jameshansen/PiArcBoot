@@ -77,29 +77,37 @@ Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 2
 
 ## Install
 
+Each system has an installer, drawn with [ROOGUI](https://github.com/jameshansen/ROOGUI), and a portable copy, both on the [latest release](../../releases/latest). PiArcBoot needs an internet connection to install games.
+
 ### Raspberry Pi
 
-It needs 64-bit Raspberry Pi OS 13 (trixie) or newer with the desktop, SDL2 (`sudo apt install libsdl2-2.0-0` if it isn't there), `curl`, and an internet connection to install games. It's tested on a Pi 400. PiArcBoot takes 4 MB in `~/Games/PiArcBoot`, and a game under 1 MB a disc.
-
-1. Download `PiArcBoot.tar.gz` from the [latest release](../../releases/latest) and extract it. In the file manager, right-click the file and choose Extract Here.
-2. Open the `PiArcBoot` folder, double-click `install.sh` and choose Execute.
-3. Choose **Install**, then **Play Now**. In PiArcBoot, choose a game and press **Install**, then **Play**.
-
-From a terminal the same thing is:
+It needs 64-bit Raspberry Pi OS 13 (trixie) or newer with the desktop, SDL2 (`sudo apt install libsdl2-2.0-0` if it isn't there) and `curl`. It's tested on a Pi 400. PiArcBoot takes about 6 MB, and a game under 1 MB a disc. In a terminal:
 
 ```bash
-tar -xzf PiArcBoot.tar.gz && PiArcBoot/install.sh
+curl -fsSL https://github.com/jameshansen/PiArcBoot/releases/latest/download/install.sh | sh
 ```
 
-Running `install.sh` again offers to reinstall or remove PiArcBoot. Removing it leaves the games installed with it in `~/.local/share/piarcboot`, and a game's Settings in the launcher uninstalls it.
+Or download `PiArcBoot-Installer-RaspberryPi.zip`, extract it and double-click `Install PiArcBoot`. Then in PiArcBoot, choose a game and press **Install**, then **Play**.
+
+Running the installer again offers to update or remove PiArcBoot. Removing it keeps the games installed with it, and a game's Settings in the launcher uninstalls it.
 
 ### Linux PC
 
-`PiArcBoot-Linux-x86-64.tar.gz` installs the same way on a 64-bit PC with a Linux desktop as new as Ubuntu 24.04 or Debian 13, with SDL2, `curl` and `zenity`.
+The same command installs PiArcBoot on a 64-bit PC with a Linux desktop as new as Ubuntu 24.04 or Debian 13, with SDL2 and `curl`. Or download `PiArcBoot-Installer-Linux-x86-64.zip`, extract it and double-click `Install PiArcBoot`.
 
 ### Windows
 
-Download `PiArcBoot-Windows.zip` from the [latest release](../../releases/latest), extract it anywhere and run `piarcboot.exe` in the `PiArcBoot` folder. It needs 64-bit Windows. Nothing is installed. Games are kept in `%APPDATA%\PiArcBoot`, so to remove PiArcBoot delete its folder, and that one too to remove the games.
+It needs 64-bit Windows. In PowerShell:
+
+```powershell
+irm https://github.com/jameshansen/PiArcBoot/releases/latest/download/install.ps1 | iex
+```
+
+Or download `PiArcBoot-Installer-Windows.zip`, extract it and run `Install PiArcBoot.exe`. Games are kept in `%APPDATA%\PiArcBoot`.
+
+### Portable
+
+`PiArcBoot-Portable-RaspberryPi.zip`, `PiArcBoot-Portable-Windows.zip` and `PiArcBoot-Portable-Linux-x86-64.zip` run from wherever they're extracted, with nothing installed. Run `piarcboot`, or `piarcboot.exe` on Windows, in the `PiArcBoot` folder. A portable copy keeps its games and saves in the `Data` folder beside it, so everything stays in that one folder.
 
 ## Playing
 
@@ -156,7 +164,7 @@ The hard disc installers of the games that came with one copy files from the gam
 
 What PiArcBoot knows about particular games is in `presets/`, not its code. A game can have files that Install adds to its own, such as the choices file that starts Star Fighter 3000 full screen where it would otherwise open in a desktop window, the files its hard disc installer copies, and settings: the support pack it needs, keys to press once it has started (Escape puts Meteors on the whole screen), the screen mode for a game that plays in the desktop (MODE 15 for Black Angel), or why a PackMan game is left out. `presets/README.md` describes them.
 
-The picture comes from ArcEm's display driver and is scaled by the graphics chip, with pixels repeated to the nearest whole size and only the edges between them blended, so it stays sharp at any window size. Sound is ArcEm's mix of the VIDC's 8 channels at 48 kHz, resampled slightly to keep about 80 ms queued. The launcher and the splash screen use [ROOGUI](https://github.com/jameshansen/ROOGUI), a separate library that draws the RISC OS look from RISC OS Open's sprites and fonts at any display scale.
+The picture comes from ArcEm's display driver and is scaled by the graphics chip, with pixels repeated to the nearest whole size and only the edges between them blended, so it stays sharp at any window size. Sound is ArcEm's mix of the VIDC's 8 channels at 48 kHz, resampled slightly to keep about 80 ms queued. The launcher, the installer and the splash screen use [ROOGUI](https://github.com/jameshansen/ROOGUI), a separate library that draws the RISC OS look from RISC OS Open's sprites and fonts at any display scale.
 
 ## Building
 
@@ -185,15 +193,15 @@ sh tools/build-windows.sh <SDL2 folder> <zlib folder>
 | Path | What it is |
 | --- | --- |
 | `arcem/` | The machine, in ArcEm's own files |
-| `src/` | PiArcBoot's own code: the machine's layer over ArcEm, the floppy controllers and disc images, the launcher and the game window |
+| `src/` | PiArcBoot's own code: the machine's layer over ArcEm, the floppy controllers and disc images, the launcher, the installer and the game window |
 | `tests/` | Scripts that boot every game in the table, compare pictures and test writing to discs |
-| `tools/` | The Windows build and the script that makes the game table |
+| `tools/` | The Windows build, the front of the installer and what packs it, and the script that makes the game table |
 | `icons/` | The games' icons, made from their sprites |
 | `presets/` | Files Install adds to a game, such as a choices file that suits PiArcBoot's window, settings, and what games' hard disc installers copy |
 | `docs/` | Screenshots and release notes |
 | `ROM311` | The ROM image from ROO311's releases |
 | `distributable-games/` | The Classics games' zips, kept for installing from and not part of a release |
-| `install.sh` | The installer for Raspberry Pi OS and other Linux desktops |
+| `install.sh`, `install.ps1` | Download a release's installer and run it, from a terminal |
 
 GitHub Actions builds the Raspberry Pi, Linux PC and Windows downloads on every push, and a version tag such as `v1.0.0` publishes them as a release, with `docs/releases/v1.0.0.md` as its notes.
 
@@ -227,7 +235,7 @@ The machine is [ArcEm](https://github.com/ArcEm-emu/ArcEm), the Acorn Archimedes
 
 The ROM is [ROO311](https://github.com/jameshansen/ROO311), built from the sources [RISC OS Open](https://www.riscosopen.org) publishes.
 
-The launcher is drawn by [ROOGUI](https://github.com/jameshansen/ROOGUI), with the Window Manager's sprites and the Homerton font from the RISC OS Open sources. Windows, sound and input go through [SDL2](https://www.libsdl.org), and compression through zlib.
+The launcher and the installer are drawn by [ROOGUI](https://github.com/jameshansen/ROOGUI), with the Window Manager's sprites and the Homerton font from the RISC OS Open sources. Windows, sound and input go through [SDL2](https://www.libsdl.org), and compression through zlib.
 
 PiArcBoot's icon is the Archimedes badge, its triangular A in red and yellow on blue, redrawn in code for this project. The Archimedes name and badge were trademarks of Acorn Computers.
 

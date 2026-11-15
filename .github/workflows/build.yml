@@ -1,7 +1,9 @@
 # Builds PiArcBoot on every push: for 64-bit Raspberry Pi OS on an ARM runner, for x86-64 Linux, and
-# for 64-bit Windows with zig. A version tag (v1.2.3) also publishes the three as a release of that
-# name, its notes a table of the downloads (docs/releases/download.md, with the tag filled in) and
-# then docs/releases/v1.2.3.md, and the About tab shows the tag's version.
+# for 64-bit Windows with zig, each as an installer and a portable copy, both zips. A version tag
+# (v1.2.3) also publishes them as a release of that name, with install.sh and install.ps1, which
+# download and run the installer from a terminal. Its notes are a table of the downloads
+# (docs/releases/download.md, with the tag filled in) and then docs/releases/v1.2.3.md, and the
+# About tab shows the tag's version.
 name: Build
 
 on:
@@ -28,10 +30,10 @@ jobs:
         include:
           - arch: arm64
             runner: ubuntu-24.04-arm
-            archive: PiArcBoot.tar.gz
+            name: RaspberryPi
           - arch: x86-64
             runner: ubuntu-24.04
-            archive: PiArcBoot-Linux-x86-64.tar.gz
+            name: Linux-x86-64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -50,13 +52,20 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist/PiArcBoot
-          cp -r build/piarcboot build/libroogui.so build/LICENSE-ROOGUI ROM311 icons presets icon.png install.sh LICENSE dist/PiArcBoot/
-          chmod +x dist/PiArcBoot/install.sh      # so the file manager offers to run it, and the README's command works
-          tar -czf ${{ matrix.archive }} -C dist PiArcBoot
+          cp -r build/piarcboot build/libroogui.so build/LICENSE-ROOGUI ROM311 icons presets icon.png LICENSE dist/PiArcBoot/
+          make build/stub
+          python3 tools/mkinstaller.py build/stub dist/PiArcBoot "dist/Install PiArcBoot"
+          (cd dist && zip -q "../PiArcBoot-Installer-${{ matrix.name }}.zip" "Install PiArcBoot")
+          mkdir dist/PiArcBoot/Data               # a portable copy keeps its games and saves in here
+          (cd dist && zip -qr "../PiArcBoot-Portable-${{ matrix.name }}.zip" PiArcBoot)
+      - name: Test the installer
+        run: |
+          PIARCBOOT_HOME=$PWD/build/setup-home "dist/Install PiArcBoot" --quiet
+          PIARCBOOT_HOME=$PWD/build/setup-home build/setup-home/Programs/PiArcBoot/piarcboot check
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.archive }}
-          path: ${{ matrix.archive }}
+          name: PiArcBoot-${{ matrix.name }}
+          path: PiArcBoot-*-${{ matrix.name }}.zip
 
   windows:
     name: Windows
@@ -85,11 +94,17 @@ jobs:
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then V=${GITHUB_REF_NAME#v}; else V=dev-${GITHUB_SHA::7}; fi
           VERSION="$V" sh tools/build-windows.sh "$PWD/deps/SDL2-$SDL_VERSION/x86_64-w64-mingw32" "$PWD/deps/zlib-$ZLIB_VERSION"
-          cd build/win && zip -qr ../../PiArcBoot-Windows.zip PiArcBoot
+      - name: Package
+        run: |
+          rm -f build/win/PiArcBoot/*.pdb
+          python3 tools/mkinstaller.py build/win/stub.exe build/win/PiArcBoot "build/win/Install PiArcBoot.exe"
+          (cd build/win && zip -q ../../PiArcBoot-Installer-Windows.zip "Install PiArcBoot.exe")
+          mkdir build/win/PiArcBoot/Data          # a portable copy keeps its games and saves in here
+          (cd build/win && zip -qr ../../PiArcBoot-Portable-Windows.zip PiArcBoot)
       - uses: actions/upload-artifact@v4
         with:
-          name: PiArcBoot-Windows.zip
-          path: PiArcBoot-Windows.zip
+          name: PiArcBoot-Windows
+          path: PiArcBoot-*-Windows.zip
 
   release:
     name: Publish the release
@@ -117,7 +132,14 @@ jobs:
           fi
           # They open with a table of the downloads for each system, linked to this release's files
           { sed "s/{TAG}/$TAG/g" docs/releases/download.md; cat "docs/releases/$TAG.md"; } > notes.md
-          files="out/PiArcBoot.tar.gz out/PiArcBoot-Linux-x86-64.tar.gz out/PiArcBoot-Windows.zip"
+          # The terminal scripts fetch the installer from the release they came with
+          sed "s/{TAG}/$TAG/g" install.sh > out/install.sh
+          sed "s/{TAG}/$TAG/g" install.ps1 > out/install.ps1
+          files=
+          for kind in Installer Portable; do
+            for os in RaspberryPi Windows Linux-x86-64; do files="$files out/PiArcBoot-$kind-$os.zip"; done
+          done
+          files="$files out/install.sh out/install.ps1"
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" $files --clobber
             gh release edit "$TAG" --notes-file notes.md

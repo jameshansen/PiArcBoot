@@ -1,6 +1,7 @@
 #!/bin/sh
 # Builds PiArcBoot for 64-bit Windows with zig (https://ziglang.org), from Git Bash on Windows or
-# from any other machine zig runs on. The result is build/win/PiArcBoot, a folder to copy anywhere.
+# from any other machine zig runs on. The result is build/win/PiArcBoot, a folder to copy anywhere,
+# and build/win/stub.exe, the front of the installer that tools/mkinstaller.py packs it behind.
 #
 #   sh tools/build-windows.sh <SDL2 folder> <zlib folder>
 #
@@ -51,7 +52,14 @@ cp "$HERE/icon.ico" .
 printf '1 ICON "icon.ico"\n' > piarcboot.rc
 zig rc piarcboot.rc piarcboot.res
 zig cc -target x86_64-windows-gnu -o "$OUT/piarcboot.exe" $objs piarcboot.res -lmingw32 \
-  "$SDL/lib/libSDL2main.a" "$SDL/lib/libSDL2.dll.a" "$ZLIB/libz.dll.a" "$GUI/build/win/libroogui.dll.a" -lcomdlg32 -lshell32 -Wl,--subsystem,windows
+  "$SDL/lib/libSDL2main.a" "$SDL/lib/libSDL2.dll.a" "$ZLIB/libz.dll.a" "$GUI/build/win/libroogui.dll.a" -lcomdlg32 -lshell32 -lole32 -Wl,--subsystem,windows
+# The front of the installer (tools/mkinstaller.py packs the folder behind it), with the program's
+# icon and a manifest saying it runs as whoever starts it: without one, Windows takes a program
+# called Install for one that needs an administrator
+cp "$HERE/tools/stub.manifest" .
+printf '1 ICON "icon.ico"\n1 24 "stub.manifest"\n' > stub.rc
+zig rc stub.rc stub.res
+zig cc -target x86_64-windows-gnu -O2 -Wall -o ../stub.exe "$HERE/tools/stub.c" stub.res -Wl,--subsystem,windows
 cp "$SDL/bin/SDL2.dll" "$ZLIB/zlib1.dll" "$GUI/build/win/roogui.dll" "$OUT/"
 cp "$GUI/LICENSE" "$OUT/LICENSE-ROOGUI"
 rm -rf "$OUT/icons" "$OUT/presets"

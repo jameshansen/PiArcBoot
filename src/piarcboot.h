@@ -195,6 +195,7 @@ int store_list(game_t **out);
 void store_remove(const game_t *g);
 void store_shortcuts(const game_t *g);
 void store_pictures_dir(char *buf, size_t size);       /* the folder Save Snapshot saves in */
+void store_shortcut_dirs(char *apps, size_t apps_size, char *desk, size_t desk_size);  /* where menu entries and desktop shortcuts go, on Linux */
 void store_icon(const game_t *g, uint8_t *out);
 int store_sprites(const game_t *g, sprite_t **out);
 int store_set_icon(const game_t *g, const sprite_t *s);
@@ -209,6 +210,9 @@ int install_jaspp(const entry_t *e, int desktop, int menu, progress_t *p);
 int import_game(char **files, int n, const char *add_to, char *id_out, char *error, size_t error_size);
 int spawn_game(const char *id);
 int store_fetch(const char *url, const char *dest);     /* downloads a file; 0 when it arrived */
+
+/* setup.c: the installer, "piarcboot setup" */
+int setup_main(int argc, char **argv, const char *script);
 
 /* classics.c: free games that come as RISC OS applications, made into floppy images */
 enum { CLASSIC_ARCADE, CLASSIC_PACKMAN, CLASSIC_SECTIONS };

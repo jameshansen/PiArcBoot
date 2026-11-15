@@ -1,8 +1,8 @@
 /* Where games live and how they get there.
 
    Every game has a folder of its own under the data folder (~/.local/share/piarcboot/games on
-   Linux, %APPDATA%\PiArcBoot\games on Windows) holding its disc images, its icon and game.ini,
-   its settings. A JASPP game is fetched into one: the package from JASPP's PackMan feed where it
+   Linux, %APPDATA%\PiArcBoot\games on Windows, Data/games beside a portable copy) holding its
+   disc images, its icon and game.ini, its settings. A JASPP game is fetched into one: the package from JASPP's PackMan feed where it
    holds every floppy image of the game, and otherwise the floppy images from JASPP's release
    folder for the game. A game of the user's own is copied into one from the disc images given.
    Shortcuts on the desktop and in the menu point back at "piarcboot play <game>". */
@@ -41,10 +41,15 @@ const char *store_dir(void)
 	if (!dir[0])
 	{
 		const char *home = getenv("PIARCBOOT_HOME");
-		char games[720];
+		char games[720], portable[720];
 
+		/* A portable copy has a Data folder beside the program, and keeps everything in there */
+		snprintf(portable, sizeof portable, "%s", store_exe());
+		snprintf(portable + (base_name(portable) - portable), sizeof portable - (base_name(portable) - portable), "Data");
 		if (home)
 			snprintf(dir, sizeof dir, "%s", home);
+		else if (is_dir(portable))
+			snprintf(dir, sizeof dir, "%s", portable);
 #ifdef _WIN32
 		else
 			snprintf(dir, sizeof dir, "%s/PiArcBoot", getenv("APPDATA") ? getenv("APPDATA") : ".");
@@ -295,7 +300,7 @@ static void shortcut(const char *folder_var, const char *sub, const char *kind, 
 #ifndef _WIN32
 /* The folders menu entries and desktop shortcuts go in. With PIARCBOOT_HOME set, which the tests
    do, both are kept inside that folder and the real desktop and menu are left alone. */
-static void shortcut_dirs(char *apps, size_t apps_size, char *desk, size_t desk_size)
+void store_shortcut_dirs(char *apps, size_t apps_size, char *desk, size_t desk_size)
 {
 	const char *test = getenv("PIARCBOOT_HOME"), *data = getenv("XDG_DATA_HOME");
 	const char *home = getenv("HOME") ? getenv("HOME") : ".";
@@ -370,7 +375,7 @@ void store_shortcuts(const game_t *g)
 	int i;
 
 	window_class(g->id, cls, sizeof cls);
-	shortcut_dirs(apps, sizeof apps, deskdir, sizeof deskdir);
+	store_shortcut_dirs(apps, sizeof apps, deskdir, sizeof deskdir);
 	make_dirs(apps);
 	snprintf(menu, sizeof menu, "%s/%s.desktop", apps, cls);
 	snprintf(desk, sizeof desk, "%s/%s.desktop", deskdir, cls);
@@ -412,7 +417,7 @@ void store_remove(const game_t *g)
 		char cls[160], apps[900], desk[900], entry[1100];
 
 		window_class(g->id, cls, sizeof cls);
-		shortcut_dirs(apps, sizeof apps, desk, sizeof desk);
+		store_shortcut_dirs(apps, sizeof apps, desk, sizeof desk);
 		snprintf(entry, sizeof entry, "%s/%s.desktop", apps, cls);
 		unlink(entry);
 	}
