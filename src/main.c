@@ -9,7 +9,7 @@
      piarcboot play <game> --test <script>       a game window driven by a script, as fast as it goes
      piarcboot launcher --test <script>          the launcher driven by a script
      piarcboot mkicons <packages folder> <out>   the JASPP games' icons, from their packages
-     piarcboot icon <file> <out.png> [sprite]    an icon from a sprite file or a disc image
+     piarcboot icon <file> <out.png> [sprite]    an icon from a sprite file, a disc image or a PNG
      piarcboot list                              the game table
      piarcboot checknew                          note which games new to the feed have floppy images
      piarcboot classic [<game>]                  install a game from the Classics list, or list them
@@ -184,6 +184,22 @@ static int cmd_icon(int argc, char **argv)
 		icon_app(rgba);
 	else if (!strcmp(argv[0], "generic"))
 		icon_generic(rgba);
+	else if (strlen(argv[0]) > 4 && !strcmp(argv[0] + strlen(argv[0]) - 4, ".png"))
+	{
+		/* a picture made into an icon as a sprite is, one with see-through parts as a masked sprite */
+		sprite_t s;
+
+		memset(&s, 0, sizeof s);
+		if (!(s.rgba = png_read(argv[0], &s.w, &s.h)))
+		{
+			fprintf(stderr, "%s isn't a PNG PiArcBoot reads (8-bit RGB or RGBA)\n", argv[0]);
+			return 1;
+		}
+		for (i = 0; i < s.w * s.h && !s.masked; i++)
+			s.masked = s.rgba[i * 4 + 3] < 255;
+		icon_render(rgba, &s);
+		free(s.rgba);
+	}
 	else
 	{
 		d = jfd_flatten(argv[0], &len);
