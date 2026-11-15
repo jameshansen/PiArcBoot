@@ -10,6 +10,18 @@
 
 ![The launcher's JASPP tab, with four games installed](docs/launcher.png)
 
+Install from a terminal. On a Raspberry Pi or a Linux PC:
+
+```bash
+curl -fsSL https://github.com/jameshansen/PiArcBoot/releases/latest/download/install.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://github.com/jameshansen/PiArcBoot/releases/latest/download/install.ps1 | iex
+```
+
 ## Background
 
 I grew up with some of these games on the Acorn Archimedes. I've also been building tools that make it easy to launch some of my, and my kids' favourite games on the Raspberry Pi, such as [Knytt](https://github.com/jameshansen/PiKnytt) and [Klass of 99](https://github.com/jameshansen/PiKlassOf99), and sharing them here for other fans of these lesser known titles.
