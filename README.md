@@ -14,11 +14,15 @@
 
 I grew up with some of these games on the Acorn Archimedes. I've also been building tools that make it easy to launch some of my, and my kids' favourite games on the Raspberry Pi, such as [Knytt](https://github.com/jameshansen/PiKnytt) and [Klass of 99](https://github.com/jameshansen/PiKlassOf99), and sharing them here for other fans of these lesser known titles.
 
-I wanted to add the RISC OS version of Lemmings to that list, along with the other games [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservation Project, has released with their publishers' permission. The problem is that these games need a ROM with RISC OS, the Archimedes' operating system, to start, and the RISC OS 3.11 ROM is commercial, so I built [ROO311](https://github.com/jameshansen/ROO311), a free ROM made from the RISC OS Open sources, to remove that block. PiArcBoot is the tool it was built for, and ROO311 comes with it.
+I wanted to add the RISC OS version of Lemmings to that list, along with the other games [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservation Project, has released with their publishers' permission. The problem was making it just run-and-go - the games needed a ROM with RISC OS to start, and the RISC OS 3.11 ROM is commercial, and setting up an emulator can be complicated.
 
-PiArcBoot lists 113 of the JASPP games. Install fetches a game from JASPP and Play starts it in a window of its own, with no ROM to find, no emulator to set up and no desktop to click through. Each game boots behind a splash screen on an Archimedes emulated by [ArcEm](https://github.com/ArcEm-emu/ArcEm), and the window shows it once the game has a screen of its own.
+PiArcBoot solves these problems - it is a super easy to use emulator built around running these games, starting the game directly with no setup or technical knowledge required. Even the ROM issue was solved with [ROO311](https://github.com/jameshansen/ROO311), a free ROM made from the RISC OS Open sources.
 
-The Classics tab has freeware that comes as RISC OS applications rather than disc images, such as Hamsters, Cycloids, Asylum and Oddball (former commercial games their authors and publishers let Acorn Arcade give away), along with the desktop games from PackMan, RISC OS Open's package manager. Install turns each one into floppy images, and it starts straight into play the same way the JASPP games do. Star Fighter 3000 is too big for a floppy and needs more than RISC OS 3.11 had, so it goes in a folder the machine reads directly, with ROO311's support pack beside it. Disc images of your own become games too, and so do archives of RISC OS applications, with an icon made from a sprite inside.
+PiArcBoot lists most of the JASPP games which can be quickly installed and played. along with JASPP, the Classics tab has a collection of well-known freeware games, like Asylum and Oddball, along with the desktop games from PackMan, RISC OS Open's package manager. Disc images and zip files of your own can be loaded in the My Games tab.
+
+The emulation core is based on [ArcEm](https://github.com/ArcEm-emu/ArcEm), with a number of enhancements, such as 1.6MB floppy support and save state support.
+
+This is a passion project, making some of these old favourites easy to pick up and play, whenever the moment strikes.
 
 ## Games
 
