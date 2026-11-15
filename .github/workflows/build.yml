@@ -51,6 +51,7 @@ jobs:
         run: |
           mkdir -p dist/PiArcBoot
           cp -r build/piarcboot build/libroogui.so build/LICENSE-ROOGUI ROM311 icons presets icon.png install.sh LICENSE dist/PiArcBoot/
+          chmod +x dist/PiArcBoot/install.sh      # so the file manager offers to run it, and the README's command works
           tar -czf ${{ matrix.archive }} -C dist PiArcBoot
       - uses: actions/upload-artifact@v4
         with:
