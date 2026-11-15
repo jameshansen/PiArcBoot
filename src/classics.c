@@ -296,6 +296,16 @@ static int fail(progress_t *p, const char *why)
 	return -1;
 }
 
+/* Whether the window has cancelled the install, which then ends as failed with its folder gone */
+static int cancelled(progress_t *p, const char *part)
+{
+	if (!p->cancel)
+		return 0;
+	remove_tree(part);
+	fail(p, "Cancelled");
+	return 1;
+}
+
 /* The first part of a RISC OS path, the object in the disc's root it belongs to */
 static size_t top_len(const char *path)
 {
@@ -845,6 +855,12 @@ int run_installer(game_t *g, const char *id, progress_t *p)
 		next = strchr(line, '\n');
 		if (next)
 			*next++ = 0;
+		if (p->cancel)          /* the window's Cancel: nothing has been written yet */
+		{
+			snprintf(p->error, sizeof p->error, "Cancelled");
+			result = -1;
+			break;
+		}
 		line[strcspn(line, "\r")] = 0;
 		if (sscanf(line, " copy %d %299s %299[^\n]", &k, from, to) != 3 || from[0] != '$' || to[0] != '$')
 			continue;
@@ -965,6 +981,7 @@ int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 	game_t g;
 
 	memset(&g, 0, sizeof g);
+	g.crop = -1;
 	snprintf(g.id, sizeof g.id, "%s.part", c->id);
 	store_game_path(g.id, "", part, sizeof part);
 	store_game_path(c->id, "", final, sizeof final);
@@ -976,11 +993,17 @@ int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 	p->percent = -1;
 	snprintf(path, sizeof path, "%s/package.zip", part);
 	snprintf(url, sizeof url, MIRROR "%s", c->mirror);
-	if ((!c->mirror[0] || store_fetch(url, path)) && store_fetch(c->url, path))
+	if (cancelled(p, part))
+		return -1;
+	if ((!c->mirror[0] || store_fetch(url, path)) && (p->cancel || store_fetch(c->url, path)))
 	{
+		if (cancelled(p, part))
+			return -1;
 		remove_tree(part);
 		return fail(p, "The download didn't arrive. Check the network connection and try again.");
 	}
+	if (cancelled(p, part))
+		return -1;
 	zip = file_read(path, &len);
 	unlink(path);
 	if (zip && !c->boot[0])         /* a package with no Components line: its application is in Apps/<section>/ */
@@ -1020,6 +1043,8 @@ int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 		return -1;
 	}
 	adfs_free(files, n);
+	if (cancelled(p, part))
+		return -1;
 
 	snprintf(g.info, sizeof g.info, "%s", c->info);
 	snprintf(g.boot, sizeof g.boot, "%s", c->boot);
@@ -1030,6 +1055,8 @@ int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 	g.menu = menu;
 	store_save(&g);
 	store_pick_icon(&g);
+	if (cancelled(p, part))         /* the last moment, before an older copy is replaced */
+		return -1;
 
 	p->percent = 100;
 	snprintf(g.id, sizeof g.id, "%s", c->id);

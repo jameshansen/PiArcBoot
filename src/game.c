@@ -6,16 +6,24 @@
    put up a screen of its own, so the desktop is never seen. From there the machine runs in real
    time.
 
-   The Game menu has full screen and the three window sizes. Saves has three slots, each a whole
+   The Game menu has Pause, full screen and the three window sizes. Saves has three slots, each a whole
    machine kept in a file: one of them is written every 30 seconds of play, and restoring a slot
    makes it that one. Switch Floppy, there only for a game with more than one disc, changes the
    disc in the drive, and an auto switch point remembers the screen a game asks for a disc on, so
    that the next time the game shows that screen the disc changes by itself. */
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <io.h>
+#include <share.h>
+#else
+#include <sys/file.h>
+#endif
 #include <SDL.h>
 #include "piarcboot.h"
 #include "default_cmos.h"
@@ -41,21 +49,26 @@ static int crop_from, now_cs;           /* the centisecond cropping starts, a se
 static int native_bar;                  /* the window has a menu bar of the system's own making */
 static int fit_w, fit_h;                /* the size the window was last given for a size in the menu */
 static int kept_w, kept_h;              /* and its size before it went full screen */
+static int boxed;                       /* the whole screen is shown, uncropped, for an error box the game has open */
 
 #define MENUS 3
 #define SLOTS 3
-#define MAX_ITEMS (MAX_DISCS + 8 + SLOTS * 4)
+#define MAX_ITEMS (MAX_DISCS + 12 + SLOTS * 4)
 static const char *const menu_titles[MENUS] = { "Game", "Saves", "Switch Floppy" };
 static int n_menus = MENUS;             /* 2 for a game with one disc: no Switch Floppy */
 enum { CMD_FULLSCREEN = 1, CMD_SCALE, CMD_CLOSE = CMD_SCALE + 4, CMD_SET_SWAP, CMD_CLEAR_SWAPS, CMD_SEND_ESC, CMD_CROP, CMD_DISC,
-	CMD_AUTO = 100, CMD_RESTORE = CMD_AUTO + SLOTS, CMD_SAVE = CMD_RESTORE + SLOTS, CMD_SELECTOR = CMD_SAVE + SLOTS, CMD_SNAPSHOT };
+	CMD_AUTO = 100, CMD_RESTORE = CMD_AUTO + SLOTS, CMD_SAVE = CMD_RESTORE + SLOTS, CMD_SELECTOR = CMD_SAVE + SLOTS, CMD_SNAPSHOT,
+	CMD_PAUSE };
 static time_t saved_at[SLOTS];          /* when each slot was last written, or 0 for an empty one */
 static int armed;                       /* Auto Save may write its slot: it was empty, or since the game started it has been restored or saved to, or a slot chosen */
 static int want_save, want_restore;     /* a slot to save to or restore, counting from 1, waiting for the floppy drive to finish */
 static int writing_slot = -1;           /* the slot being written on its own thread */
+static int saving_note;                 /* it was the player's Save, which is to say so when it's written */
 static int selector;                    /* the selector is open: the slots side by side, and the game stopped behind them */
 static int want_new;                    /* New Game was chosen for this slot, counting from 1 */
 static int erasing;                     /* the slot whose save the selector is asking to erase, counting from 1 */
+static int confirming;                  /* the slot whose save Save is asking to write over, counting from 1 */
+static int paused;
 static int played;                      /* the game has run since it started, or was restored, so a new game starts it again */
 static uint8_t *power_on;               /* the machine as it was at power on, which a new game goes back to */
 static size_t power_on_len;
@@ -74,6 +87,13 @@ static void notify(const char *text)
 {
 	snprintf(note, sizeof note, "%s", text);
 	note_until = SDL_GetTicks() + 3500;
+}
+
+/* The game is held still, and nothing typed or clicked reaches it: the selector is open, or a box
+   asking about a save, or it is paused */
+static int stopped(void)
+{
+	return selector || confirming || paused;
 }
 
 /* The picture as 80 by 64 brightnesses, for telling one screen from another */
@@ -147,6 +167,8 @@ static int disk_number(int n)
 {
 	int number = 0;
 
+	if (!game.jaspp && !game.classic)       /* one of the player's own, whose discs they can put in any order */
+		return n + 1;
 	return sscanf(game.disc[n], "disc%d", &number) == 1 && number > 0 ? number : n + 1;
 }
 
@@ -230,13 +252,14 @@ static int pic_scale(void)
    the least that holds every window on the screen, as ROO311's HostLink says where they are,
    leaving out the desktop's backdrop. That starts once the game is going and the folder it was
    started from has had time to close. A window wholly off the screen is hidden, so it is left
-   out too. With no windows the picture is shown whole. */
+   out too. With no windows the picture is shown whole, and so it is while the game has an error
+   box open, which may be outside its windows. */
 static SDL_Rect view(void)
 {
 	SDL_Rect v = { 0, 0, emu_w, emu_h };
 	int ys = emu_dbl ? 4 : 2, sh = emu_h * ys, x0 = 1280, y0 = sh, x1 = 0, y1 = 0, i;
 
-	for (i = 0; crop && crop_from && now_cs >= crop_from && i < emu_host_nwins; i++)
+	for (i = 0; crop && !emu_host_error_open && crop_from && now_cs >= crop_from && i < emu_host_nwins; i++)
 	{
 		const int *w = emu_host_wins[i];
 		int a = w[0] > 0 ? w[0] : 0, b = w[1] > 0 ? w[1] : 0, c = w[2] < 1280 ? w[2] : 1280, d = w[3] < sh ? w[3] : sh;
@@ -419,6 +442,13 @@ static void draw_picture(void)
 		if (!fullscreen && !own_size())
 			fit_window();           /* the game changed screen mode, and the window follows */
 	}
+	if (crop && boxed != emu_host_error_open)
+	{
+		boxed = emu_host_error_open;    /* the window takes the whole screen's shape for an error box, and the windows' again after */
+		crop_fitted = 0;
+		if (!fullscreen && !own_size())
+			fit_window();
+	}
 	if (crop && (src.w < emu_w || src.h < emu_h) && !fullscreen && !own_size())
 	{
 		if (!crop_fitted)
@@ -555,13 +585,15 @@ static uint32_t *screenshot(int *sw, int *sh)
 }
 
 /* Save Snapshot: the picture as the window shows it, the part in view with its lines doubled where
-   they are, at its full size, as a PNG in the Pictures folder named after the game and the time */
+   they are, at its full size, as a PNG in the Pictures folder named after the game and the time,
+   with " 2", " 3" and so on after a name already taken in the same second */
 static void save_snapshot(void)
 {
 	SDL_Rect v = view();
-	int ys = emu_dbl ? 2 : 1, h = v.h * ys, x, y;
+	int ys = emu_dbl ? 2 : 1, h = v.h * ys, x, y, k;
 	char dir[1024], path[1400], name[160], stamp[32], text[200];
 	time_t now = time(NULL);
+	struct stat st;
 	uint8_t *rgba;
 	size_t i;
 
@@ -585,6 +617,8 @@ static void save_snapshot(void)
 	strftime(stamp, sizeof stamp, "%Y-%m-%d %H.%M.%S", localtime(&now));
 	store_pictures_dir(dir, sizeof dir);
 	snprintf(path, sizeof path, "%s/%s %s.png", dir, name, stamp);
+	for (k = 2; !stat(path, &st) && k < 1000; k++)
+		snprintf(path, sizeof path, "%s/%s %s %d.png", dir, name, stamp, k);
 	if (png_write(path, rgba, v.w, h))
 		snprintf(text, sizeof text, "The snapshot couldn't be saved");
 	else
@@ -694,6 +728,7 @@ static int restore_slot(int k)
 		store_save(&game);
 	}
 	armed = played = 1;
+	paused = confirming = 0;
 	snprintf(text, sizeof text, "Slot %d restored", k + 1);
 	notify(text);
 	return 0;
@@ -778,24 +813,23 @@ static int red_button(int x, int y, int w, int h, const char *label)
 	return rg_button(x + 4, y + 4, w - 8, h - 8, label, 1);
 }
 
-/* Asks whether to erase a slot's save, in a small box over the selector with Cancel and Erase.
-   Erase takes a click: Return doesn't press it. Returns 1 to erase, 2 to keep it, 0 for neither yet. */
-static int ask_erase(int w, int h, int top, int slot)
+/* Asks whether to take a save away, to erase it or write over it, in a small box in the middle of
+   the h high space below top, with Cancel and a red button that does it. That button takes a
+   click: Return doesn't press it. Returns 1 to go ahead, 2 to keep the save, 0 for neither yet. */
+static int ask(int w, int h, int top, const char *title, const char *text, const char *button)
 {
-	char text[48];
 	int tw, dw, dh, x, y, closed;
 
-	snprintf(text, sizeof text, "Erase the save in Slot %d?", slot);
 	tw = rg_text_w(RG_DESKTOP, text);
 	dw = tw + 24 > 214 ? tw + 24 : 214;
 	dh = 20 + 12 + 20 + 12 + 34 + 10;
 	x = (w - dw) / 2;
 	y = top + (h - dh) / 2;
-	closed = rg_dialogue(x, y, dw, dh, "Erase");
+	closed = rg_dialogue(x, y, dw, dh, title);
 	rg_text_centre(RG_DESKTOP, x, y + 32, dw, 20, rg_colour(7), text);
 	if (rg_button(x + dw - 12 - 92 - 12 - 84 + 4, y + dh - 10 - 30, 84, 26, "Cancel", 1) || closed || rg_in.key == SDLK_ESCAPE)
 		return 2;
-	return red_button(x + dw - 12 - 92, y + dh - 10 - 34, 92, 34, "Erase");
+	return red_button(x + dw - 12 - 92, y + dh - 10 - 34, 92, 34, button);
 }
 
 /* The selector: a box with the three slots from left to right, each its screenshot and when it
@@ -832,7 +866,7 @@ static void draw_selector(void)
 	dh = 20 + 2 * pad + th + under;
 	x = (w - dw) / 2;
 	y = top + (h - dh) / 2;
-	if (erasing)                    /* the box asking about it takes the clicks and keys */
+	if (erasing || confirming)      /* the box asking about it takes the clicks and keys */
 		rg_in.pressed = rg_in.released = rg_in.key = 0;
 	closed = rg_dialogue(x, y, dw, dh, "Saves");
 	for (k = 0; k < SLOTS; k++)
@@ -886,16 +920,50 @@ static void draw_selector(void)
 	rg_in.key = key;
 	if (erasing)
 	{
+		char text[48];
 		int r;
 
 		if (rg_in.key == SDLK_RETURN)
 			rg_in.key = 0;
-		r = ask_erase(w, h, top, erasing);
+		snprintf(text, sizeof text, "Erase the save in Slot %d?", erasing);
+		r = ask(w, h, top, "Erase", text, "Erase");
 		if (r == 1)
 			erase_save(erasing - 1);
 		if (r)
 			erasing = 0;
 	}
+}
+
+/* Asks whether Save is to write over a slot's save, the game stopped behind the box */
+static void draw_confirm(void)
+{
+	int w, h, top = fullscreen ? 0 : (int)(bar_px() / rg_scale + 0.5f), r;
+	char text[48];
+
+	rg_size(&w, &h);
+	if (rg_in.key == SDLK_RETURN)
+		rg_in.key = 0;
+	snprintf(text, sizeof text, "Replace the save in Slot %d?", confirming);
+	r = ask(w, h - top, top, "Save", text, "Save");
+	if (r == 1)
+		want_save = confirming;
+	if (r)
+		confirming = 0;
+}
+
+/* A paused game's picture darkened, with Paused in a box in the middle of it */
+static void draw_paused(void)
+{
+	int w, h, top = fullscreen ? 0 : (int)(bar_px() / rg_scale + 0.5f), bw = rg_text_w(RG_DESKTOP_BOLD, "Paused") + 48, bh = 40, x, y;
+
+	rg_size(&w, &h);
+	rg_shade(0, top, w, h - top, 0x000000, 40);
+	x = (w - bw) / 2;
+	y = top + (h - top - bh) / 2;
+	rg_shade(x + 4, y + 4, bw, bh, 0x000000, 80);
+	rg_fill(x, y, bw, bh, 0x000000);
+	rg_fill(x + 1, y + 1, bw - 2, bh - 2, rg_colour(12));
+	rg_text_centre(RG_DESKTOP_BOLD, x, y, bw, bh, 0x000000, "Paused");
 }
 
 /* What the menus hold just now, in order. Returns how many items. */
@@ -907,6 +975,8 @@ static int menu_items(menu_item_t *it, int booting)
 	memset(it, 0, sizeof(menu_item_t) * MAX_ITEMS);
 #define ITEM(m, c, tick, line, ...) \
 	(it[n].menu = m, it[n].cmd = c, it[n].checked = tick, it[n].rule = line, snprintf(it[n].label, sizeof it[n].label, __VA_ARGS__), n++)
+	ITEM(0, CMD_PAUSE, paused, 0, "Pause");
+	it[n - 1].shaded = booting;
 	ITEM(0, CMD_SEND_ESC, 0, 0, "Send ESC");
 	ITEM(0, CMD_FULLSCREEN, fullscreen, 1, "Fullscreen");
 	for (i = 1; i <= 3; i++)
@@ -952,9 +1022,30 @@ static int menu_command(int cmd)
 		store_save(&game);
 	}
 	else if (cmd >= CMD_RESTORE && cmd < CMD_RESTORE + SLOTS && saved_at[cmd - CMD_RESTORE])
+	{
 		want_restore = cmd - CMD_RESTORE + 1;
+		close_selector();               /* as its Continue would */
+	}
+	else if (cmd >= CMD_SAVE && cmd < CMD_SAVE + SLOTS && saved_at[cmd - CMD_SAVE] && cmd - CMD_SAVE + 1 != game.autosave)
+	{
+		confirming = cmd - CMD_SAVE + 1;        /* a save that isn't Auto Save's is written over only once the player says */
+		erasing = 0;
+		set_capture(0);
+		memset(emu_host_keys, 0, sizeof emu_host_keys);
+	}
 	else if (cmd >= CMD_SAVE && cmd < CMD_SAVE + SLOTS)
 		want_save = cmd - CMD_SAVE + 1;
+	else if (cmd == CMD_PAUSE)
+	{
+		paused = !paused;
+		if (paused)
+		{
+			set_capture(0);
+			memset(emu_host_keys, 0, sizeof emu_host_keys);
+		}
+		else
+			emu_audio_fade_in(300);
+	}
 	else if (cmd == CMD_SNAPSHOT)
 		save_snapshot();
 	else if (cmd == CMD_SELECTOR)
@@ -969,6 +1060,7 @@ static int menu_command(int cmd)
 	else if (cmd > CMD_SCALE && cmd <= CMD_SCALE + 3)
 	{
 		game.scale = cmd - CMD_SCALE;
+		game.win_w = game.win_h = 0;    /* the window opens at this size next time, not one it was dragged to */
 		set_fullscreen(0);
 		fit_window();
 	}
@@ -1007,6 +1099,28 @@ static int menu_command(int cmd)
 	else if (cmd >= CMD_DISC && cmd < CMD_DISC + game.ndiscs)
 		choose_disc(cmd - CMD_DISC);
 	return 0;
+}
+
+/* Ctrl+Alt+S and Ctrl+Alt+R save to and restore the slot selected for Auto Save, as its Save and
+   Restore in the Saves menu do, and Ctrl+Alt+P pauses */
+static void quick_key(int key)
+{
+	char text[64];
+	int k = game.autosave - 1;
+
+	if (key == SDLK_p)
+		menu_command(CMD_PAUSE);
+	else if (k < 0)
+		notify("No slot is selected for Auto Save");
+	else if (key == SDLK_s)
+		menu_command(CMD_SAVE + k);
+	else if (saved_at[k])
+		menu_command(CMD_RESTORE + k);
+	else
+	{
+		snprintf(text, sizeof text, "Slot %d is empty", k + 1);
+		notify(text);
+	}
 }
 
 /* A notice in the bottom right corner: a cream box with a black edge */
@@ -1059,6 +1173,7 @@ static struct
 	int task_at;            /* when it became a task in the desktop, or 0 */
 	int drive_at;           /* when the floppy drive last turned */
 	int keyed;              /* the keys its presets name have been pressed */
+	int run_due, run_from, run_reads, run_quiet;    /* its folder opened, the application still to run, and the drive's reads since */
 } app = { -1 };
 
 /* Where the game's application is: the floppy in drive 0, or the HostFS folder of a game with a
@@ -1097,8 +1212,9 @@ static void start_app(void)
 	}
 	snprintf(text, sizeof text, "Filer_OpenDir %s", app_root());
 	emu_host_run(text);
-	snprintf(text, sizeof text, "Filer_Run %s.%s", app_root(), game.boot);
-	emu_host_run(text);
+	app.run_due = 1;                /* app_events runs it once the Filer has read the folder */
+	app.run_from = app.run_quiet = now_cs;
+	app.run_reads = machine_disc_reads;
 }
 
 /* The keys a game's presets name (keys=, by the names test scripts use), pressed behind the splash
@@ -1141,6 +1257,26 @@ static void app_events(int cs)
 		app.run_at = -1;
 		start_app();
 	}
+	/* The application runs a second after its folder was opened, once the drive has been quiet
+	   for half a second: run while the Filer still reads the folder, FileSwitch can be left part
+	   way through, and Fire and Ice then stops with an address exception inside it */
+	if (app.run_due)
+	{
+		if (machine_disc_reads != app.run_reads)
+		{
+			app.run_reads = machine_disc_reads;
+			app.run_quiet = cs;
+		}
+		if (cs >= app.run_from + 100 && cs >= app.run_quiet + 50)
+		{
+			char text[512];
+
+			app.run_due = 0;
+			snprintf(text, sizeof text, "Filer_Run %s.%s", app_root(), game.boot);
+			emu_host_run(text);
+		}
+		return;
+	}
 	if (!app.started || app.ready)
 		return;
 	/* since HostLink started it, it has taken the screen or asked the person something. A game
@@ -1155,6 +1291,16 @@ static void app_events(int cs)
 	}
 	if (emu_host_tasks_at_run < 0 || emu_host_tasks <= emu_host_tasks_at_run)   /* not yet a task in the desktop */
 		return;
+	if (!app.tries)         /* a game whose presets say click=0 waits for something other than a click on its icon */
+	{
+		char click[8];
+
+		if (preset_setting(game.preset[0] ? game.preset : game.id, "click", click, sizeof click) && !atoi(click))
+		{
+			app_ready(0);
+			return;
+		}
+	}
 	if (emu_host_clicked > app.clicked)
 	{
 		if (game.classic || game.apps || app.mode)      /* a desktop game, going; a JASPP game takes the screen or asks for a disc next */
@@ -1199,12 +1345,66 @@ static int boot_script(void)
 	return game.classic || game.apps ? 1500 : 1300;
 }
 
+/* Holds the game for this copy of PiArcBoot, so that no other copy plays it and writes its saves
+   at the same time: a file in its folder kept open with a lock, which the system lets go of when
+   the program ends. 0 if another copy holds it. */
+static int hold_game(void)
+{
+	char path[1024];
+	int fd;
+
+	store_game_path(game.id, "game.lock", path, sizeof path);
+#ifdef _WIN32
+	fd = _sopen(path, _O_RDWR | _O_CREAT | _O_NOINHERIT, _SH_DENYRW, _S_IREAD | _S_IWRITE);
+	return fd >= 0 || errno != EACCES;
+#else
+	fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+	return fd < 0 || !flock(fd, LOCK_EX | LOCK_NB) || errno != EWOULDBLOCK;
+#endif
+}
+
+/* For a game another copy has open: a window of its own with a box that says so, until OK */
+static void say_open(const char *cls, const uint8_t *icon, const char *test_script)
+{
+	char text[200];
+	int w, h, done = 0, frame = 0;
+
+	if (rg_open(game.title, RG_ERROR_W + 48, RG_ERROR_H + 20 + 48, 0, cls, icon))
+		return;
+	if (test_script)
+		rg_test_load(test_script);
+	snprintf(text, sizeof text, "%s is already open in another window", game.title);
+	while (!done)
+	{
+		const char *shot = NULL, *drop = NULL;
+		SDL_Event e;
+
+		rg_begin();
+		while (SDL_PollEvent(&e))
+		{
+			rg_event(&e);
+			done |= e.type == SDL_QUIT;
+		}
+		if (test_script)
+			done |= rg_test_step(frame++, &shot, &drop);
+		rg_size(&w, &h);
+		rg_marble(0, 0, w, h);
+		done |= rg_error_box_with((w - RG_ERROR_W) / 2, (h - RG_ERROR_H + 20) / 2, "Message from PiArcBoot", text, RG_INFORMATION, "OK", NULL) ||
+			rg_in.key == SDLK_ESCAPE;
+		if (shot)
+			rg_save_shot(shot);
+		rg_present();
+		SDL_Delay(10);
+	}
+	SDL_Quit();
+}
+
 int game_main(const char *id, const char *test_script)
 {
 	char path[1024], cls[160], rom[1024], extrom[1024], hostfs[1024];
 	uint8_t icon[128 * 128 * 4], cmos[256];
 	int booting = 1, script_cs, cs = 0, script_end = -1, settle = -1, modes_at_read = 0, last_check = 0, w, h, quit = 0, i, auto_at = 0;
-	int held = 0;           /* frames a test has waited on the selector with the machine stopped, which its script's times count too */
+	int held = 0;           /* frames a test has waited with the machine stopped, on the selector or paused, which its script's times count too */
 	Uint32 splash_until = 0;        /* after a slot is picked, the splash stays up till then, SDL_GetTicks's time, and the game waits behind it */
 	int run_for = getenv("PIARCBOOT_RUN_FOR") ? atoi(getenv("PIARCBOOT_RUN_FOR")) : 0, lost = 0, shown_cs = 0;
 	menu_item_t items[MAX_ITEMS], bar_items[MAX_ITEMS];
@@ -1229,6 +1429,12 @@ int game_main(const char *id, const char *test_script)
 	for (n = 0; cls[n]; n++)
 		if (!((cls[n] | 32) >= 'a' && (cls[n] | 32) <= 'z') && !(cls[n] >= '0' && cls[n] <= '9') && cls[n] != '-' && cls[n] != '_')
 			cls[n] = '_';
+	if (!hold_game())
+	{
+		fprintf(stderr, "piarcboot: %s is already open in another window\n", game.title);
+		say_open(cls, icon, test_script);
+		return 1;
+	}
 	if (rg_open(game.title, 320 * game.scale, 256 * game.scale, RG_RESIZABLE, cls, icon))
 	{
 		fprintf(stderr, "piarcboot: %s\n", SDL_GetError());
@@ -1254,6 +1460,8 @@ int game_main(const char *id, const char *test_script)
 		menubar_set(bar_items, n_items);
 	SDL_SetWindowMinimumSize(rg_win, rg_to_window(320 * pic_scale()), rg_to_window(200 * pic_scale() + bar_px()));
 	fit_window();
+	if (game.win_w > 0 && game.win_h > 0)  /* the size the player last dragged it to */
+		SDL_SetWindowSize(rg_win, game.win_w, game.win_h);
 	icon_tex = rg_image_texture(icon, 128, 128, 1);
 	if (game.fullscreen)
 		set_fullscreen(1);
@@ -1318,7 +1526,7 @@ int game_main(const char *id, const char *test_script)
 				case SDL_KEYDOWN:
 				case SDL_KEYUP:
 				{
-					int sc = e.key.keysym.scancode, down = e.type == SDL_KEYDOWN;
+					int sc = e.key.keysym.scancode, down = e.type == SDL_KEYDOWN, key = e.key.keysym.sym;
 					int mod = SDL_GetModState(), ctrl_alt = (mod & KMOD_CTRL) && (mod & KMOD_ALT), disk = -1;
 
 					/* PiArcBoot's own keys are Ctrl+Alt ones, which Archimedes games leave alone, so Alt
@@ -1331,17 +1539,22 @@ int game_main(const char *id, const char *test_script)
 						if (down && !e.key.repeat)
 							set_fullscreen(!fullscreen);
 					}
+					else if (ctrl_alt && (key == SDLK_s || key == SDLK_r || key == SDLK_p))
+					{
+						if (down && !e.key.repeat && (!booting || key == SDLK_r))      /* a restore can end the boot, as the menu's does */
+							quick_key(key);
+					}
 					else if (sc == SDL_SCANCODE_ESCAPE)    /* frees the mouse, and never reaches the machine */
 					{
 						if (down)
 							set_capture(0);
 					}
-					else if (disk >= 0)                     /* Ctrl+Alt and a number: that disk, if the game has it */
+					else if (disk >= 0)                     /* Ctrl+Alt and a number: that disk, if the game has it, though not while it boots */
 					{
-						if (down && !e.key.repeat)
+						if (down && !e.key.repeat && !booting)
 							choose_disc(disk);
 					}
-					else if (sc < 512 && !booting && !selector)
+					else if (sc < 512 && !booting && !stopped())
 						emu_host_keys[sc] = down;
 					break;
 				}
@@ -1362,6 +1575,14 @@ int game_main(const char *id, const char *test_script)
 					set_capture(0);
 					memset(emu_host_keys, 0, sizeof emu_host_keys);
 				}
+				/* A size the player drags the window to is kept for next time, and one from the
+				   menu is not */
+				if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED && !fullscreen && !(SDL_GetWindowFlags(rg_win) & SDL_WINDOW_MAXIMIZED))
+				{
+					SDL_GetWindowSize(rg_win, &w, &h);
+					game.win_w = own_size() ? w : 0;
+					game.win_h = own_size() ? h : 0;
+				}
 				break;
 			}
 		}
@@ -1371,7 +1592,7 @@ int game_main(const char *id, const char *test_script)
 		/* A click on the picture gives the game the mouse. A game set not to capture it, or shown
 		   cropped to its windows, has the RISC OS pointer put where the host's is over the picture,
 		   by ROO311's HostLink, and the buttons pressed there. */
-		if ((game.nocapture || crop) && emu_hostlink && !selector)
+		if ((game.nocapture || crop) && emu_hostlink && !stopped())
 		{
 			SDL_Rect r, v = view();
 			double zoom;
@@ -1392,7 +1613,7 @@ int game_main(const char *id, const char *test_script)
 			b = over ? SDL_GetMouseState(NULL, NULL) : 0;
 			emu_mouse(0, 0, (b & SDL_BUTTON_LMASK ? 1 : 0) | (b & SDL_BUTTON_RMASK ? 2 : 0) | (b & SDL_BUTTON_MMASK ? 4 : 0));
 		}
-		else if (!booting && !selector && rg_in.pressed && !captured && (fullscreen || rg_in.y * rg_scale >= bar_px()))
+		else if (!booting && !stopped() && rg_in.pressed && !captured && (fullscreen || rg_in.y * rg_scale >= bar_px()))
 			set_capture(1);
 		if (captured)
 		{
@@ -1403,13 +1624,13 @@ int game_main(const char *id, const char *test_script)
 			mouse_fy -= dy;
 			emu_mouse(dx, dy, (b & SDL_BUTTON_LMASK ? 1 : 0) | (b & SDL_BUTTON_RMASK ? 2 : 0) | (b & SDL_BUTTON_MMASK ? 4 : 0));
 		}
-		else if (!((game.nocapture || crop) && emu_hostlink && !selector))
+		else if (!((game.nocapture || crop) && emu_hostlink && !stopped()))
 			emu_mouse(0, 0, 0);
 
 		/* Run the machine: flat out behind the splash and in the tests, in real time otherwise */
 		if (booting || test_script)
 		{
-			int wait = selector || (!booting && emu_mute);  /* nothing runs until a slot is picked, nor till the splash is down */
+			int wait = stopped() || (!booting && emu_mute);       /* nothing runs until a slot is picked, nor till the splash is down, nor while it is stopped */
 			int limit = wait ? 0 : test_script && !booting ? 5 : 100000;
 
 			held += wait && test_script;
@@ -1448,8 +1669,11 @@ int game_main(const char *id, const char *test_script)
 		}
 		else
 		{
-			int due = (int)((SDL_GetPerformanceCounter() - start) * 100 / freq) - cs;
+			int due;
 
+			if (stopped())          /* its time stands still, and it goes on from there */
+				start = SDL_GetPerformanceCounter() - (Uint64)cs * freq / 100;
+			due = (int)((SDL_GetPerformanceCounter() - start) * 100 / freq) - cs;
 			if (due > 10)           /* too far behind to catch up: let the time go */
 			{
 				start += (Uint64)(due - 10) * freq / 100;
@@ -1458,7 +1682,7 @@ int game_main(const char *id, const char *test_script)
 			}
 			if (run_for && (SDL_GetPerformanceCounter() - shown) / freq >= (Uint64)run_for)
 				quit = 1;
-			for (i = 0; !selector && !emu_mute && i < due; i++)     /* the game stops while the selector or the splash is up */
+			for (i = 0; !stopped() && !emu_mute && i < due; i++)   /* the game stops while the selector or the splash is up, or it is paused */
 			{
 				played = 1;
 				emu_step();
@@ -1507,7 +1731,7 @@ int game_main(const char *id, const char *test_script)
 			char text[64];
 			int k = want_new - 1;
 
-			want_new = 0;
+			want_new = paused = 0;
 			game.autosave = k + 1;
 			store_save(&game);
 			armed = 1;
@@ -1537,8 +1761,12 @@ int game_main(const char *id, const char *test_script)
 			char text[64];
 			int failed = save_slot(want_save - 1);
 
-			snprintf(text, sizeof text, failed ? "Slot %d couldn't be saved" : "Saved to Slot %d", want_save);
-			notify(text);
+			if (failed)             /* otherwise it is said once the file is written, below */
+			{
+				snprintf(text, sizeof text, "Slot %d couldn't be saved", want_save);
+				notify(text);
+			}
+			saving_note = !failed;
 			armed |= !failed && want_save == game.autosave;
 			want_save = 0;
 		}
@@ -1566,6 +1794,15 @@ int game_main(const char *id, const char *test_script)
 		}
 		if (writing_slot >= 0 && !state_writing())
 		{
+			char text[64];
+
+			if (state_write_failed())       /* a full disc, or a folder that can't be written to: Auto Save's too */
+				snprintf(text, sizeof text, "Slot %d couldn't be saved", writing_slot + 1);
+			else
+				snprintf(text, sizeof text, "Saved to Slot %d", writing_slot + 1);
+			if (saving_note || state_write_failed())
+				notify(text);
+			saving_note = 0;
 			saved_at[writing_slot] = slot_time(writing_slot);
 			writing_slot = -1;
 		}
@@ -1613,9 +1850,15 @@ int game_main(const char *id, const char *test_script)
 			draw_splash(boot < time ? boot : time, 1000);
 		}
 		else
+		{
 			draw_picture();
+			if (paused)
+				draw_paused();
+		}
 		if (selector)
 			draw_selector();
+		if (confirming)
+			draw_confirm();
 		draw_note();
 		if (shot)
 			rg_save_shot(shot);
@@ -1629,10 +1872,13 @@ int game_main(const char *id, const char *test_script)
 	{
 		game_t saved;
 
-		if (!store_load(game.id, &saved) && (saved.scale != game.scale || saved.fullscreen != fullscreen))
+		if (!store_load(game.id, &saved) && (saved.scale != game.scale || saved.fullscreen != fullscreen ||
+						     saved.win_w != game.win_w || saved.win_h != game.win_h))
 		{
 			saved.scale = game.scale;
 			saved.fullscreen = fullscreen;
+			saved.win_w = game.win_w;       /* kept as the game closes, not at each step of a drag */
+			saved.win_h = game.win_h;
 			store_save(&saved);
 		}
 	}

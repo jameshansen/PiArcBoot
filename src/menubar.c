@@ -153,7 +153,11 @@ static struct
 	void (*menu_item_set_label)(obj, const char *);
 	void (*widget_set_sensitive)(obj, int);
 	int (*check_menu_item_get_active)(obj);
+	int (*window_get_events)(obj);
+	void (*window_set_events)(obj, int);
 } gtk;
+
+#define KEY_MASKS (1 << 10 | 1 << 11)  /* GDK_KEY_PRESS_MASK and GDK_KEY_RELEASE_MASK */
 
 static const char *const gtk_names[] =
 {
@@ -164,14 +168,14 @@ static const char *const gtk_names[] =
 	"gtk_widget_get_preferred_height", "gtk_widget_get_scale_factor", "gtk_widget_get_window", "gtk_widget_get_display",
 	"gtk_window_resize", "gdk_x11_window_foreign_new_for_display", "gdk_window_reparent", "g_signal_connect_data",
 	"gtk_events_pending", "gtk_main_iteration_do", "gtk_menu_item_set_label", "gtk_widget_set_sensitive",
-	"gtk_check_menu_item_get_active"
+	"gtk_check_menu_item_get_active", "gdk_window_get_events", "gdk_window_set_events"
 };
 
 static obj strip, bar;          /* a borderless GTK window set into the top of the game's, and the menu bar in it */
 static obj *made;               /* each item's widget, as last made */
 static menu_item_t *shown_items;        /* and what they were made from */
 static int n_made;
-static int factor = 1, height, width, building;
+static int factor = 1, height, width, building, hidden;
 
 static void on_choose(obj item, void *cmd)
 {
@@ -211,6 +215,10 @@ int menubar_open(const char *const *names, int n)
 	if (!parent)
 		return 0;
 	gtk.window_reparent(gtk.widget_get_window(strip), parent, 0, 0);
+	/* The strip is a window inside the game's, and X gives the keys to the window the pointer is
+	   over when that one asks for them. It doesn't ask, so they reach the game's window wherever
+	   the pointer is. */
+	gtk.window_set_events(gtk.widget_get_window(strip), gtk.window_get_events(gtk.widget_get_window(strip)) & ~KEY_MASKS);
 	factor = gtk.widget_get_scale_factor(strip);
 	if (factor < 1)
 		factor = 1;
@@ -296,7 +304,7 @@ void menubar_set(const menu_item_t *items, int n)
 	}
 	free(sub);
 	gtk.container_add(strip, bar);
-	gtk.widget_show_all(strip);
+	gtk.widget_show_all(hidden ? bar : strip);     /* a strip hidden for full screen stays hidden */
 	gtk.widget_get_preferred_height(bar, &least, &height);
 	if (width)
 		gtk.window_resize(strip, width, height);
@@ -321,6 +329,7 @@ int menubar_poll(void)
 
 void menubar_show(int on)
 {
+	hidden = !on;
 	(on ? gtk.widget_show : gtk.widget_hide)(strip);
 }
 

@@ -188,13 +188,33 @@ int is_dir(const char *path)
 	return !stat(path, &st) && S_ISDIR(st.st_mode);
 }
 
-/* A file, or a folder with everything in it */
+/* A file, or a folder with everything in it. A link to a folder goes, and what it points to stays. */
 void remove_tree(const char *path)
 {
-	DIR *d = opendir(path);
+	DIR *d;
 	struct dirent *e;
 	char buf[1024];
+#ifdef _WIN32
+	DWORD a = GetFileAttributesA(path);
 
+	if (a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_REPARSE_POINT))
+	{
+		if (a & FILE_ATTRIBUTE_DIRECTORY)
+			RemoveDirectoryA(path);
+		else
+			DeleteFileA(path);
+		return;
+	}
+#else
+	struct stat st;
+
+	if (!lstat(path, &st) && S_ISLNK(st.st_mode))
+	{
+		unlink(path);
+		return;
+	}
+#endif
+	d = opendir(path);
 	if (d)
 	{
 		while ((e = readdir(d)))

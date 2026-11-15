@@ -19,7 +19,9 @@ static void chunk(FILE *f, const char *type, const uint8_t *data, uint32_t len)
 
 	put32(head, len);
 	memcpy(head + 4, type, 4);
-	crc = crc32(crc32(0, head + 4, 4), data, len);
+	crc = crc32(0, head + 4, 4);
+	if (len)                /* zlib takes no data as asking for the CRC to start from */
+		crc = crc32(crc, data, len);
 	put32(tail, crc);
 	fwrite(head, 8, 1, f);
 	if (len)

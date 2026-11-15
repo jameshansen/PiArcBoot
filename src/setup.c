@@ -133,6 +133,28 @@ static void ps_quoted(FILE *f, const char *s)
 }
 #endif
 
+#ifndef _WIN32
+/* The program in a folder, as the quoted first word of a desktop entry's Exec line. In quotes ",
+   ` and $ take a backslash and a backslash takes three more (the value's own escaping comes
+   first), and % is doubled. */
+static void exec_quoted(FILE *f, const char *dir)
+{
+	const char *s;
+
+	fputc('"', f);
+	for (s = dir; *s; s++)
+		if (*s == '\\')
+			fputs("\\\\\\\\", f);
+		else if (*s == '"' || *s == '`' || *s == '$')
+			fprintf(f, "\\%c", *s);
+		else if (*s == '%')
+			fputs("%%", f);
+		else
+			fputc(*s, f);
+	fputs("/piarcboot\"", f);
+}
+#endif
+
 /* Makes the shortcuts match what is wanted, pointing at the program in dest */
 static void make_shortcuts(int want_desktop, int want_menu)
 {
@@ -198,9 +220,10 @@ static void make_shortcuts(int want_desktop, int want_menu)
 			make_dirs(dir);
 			if (!(f = fopen(path, "w")))
 				continue;
-			fprintf(f, "[Desktop Entry]\nType=Application\nName=PiArcBoot\nComment=Acorn Archimedes games, booted straight from their disc images\n"
-				   "Exec=\"%s/piarcboot\"\nIcon=%s/icon.png\nTerminal=false\nCategories=Game;\nStartupWMClass=piarcboot\n%s",
-				dest, dest, !i && !want_menu ? "NoDisplay=true\n" : "");
+			fprintf(f, "[Desktop Entry]\nType=Application\nName=PiArcBoot\nComment=Acorn Archimedes games, booted straight from their disc images\nExec=");
+			exec_quoted(f, dest);
+			fprintf(f, "\nIcon=%s/icon.png\nTerminal=false\nCategories=Game;\nStartupWMClass=piarcboot\n%s",
+				dest, !i && !want_menu ? "NoDisplay=true\n" : "");
 			fclose(f);
 			chmod(path, 0755);
 		}
@@ -211,7 +234,8 @@ static void make_shortcuts(int want_desktop, int want_menu)
 /* The record of where PiArcBoot was installed and which version, kept in the data folder */
 static void record_path(char *buf, size_t size)
 {
-	snprintf(buf, size, "%s/installed", store_dir());
+	make_dirs(store_home_dir());            /* the installed copy's data folder, even run from a portable one */
+	snprintf(buf, size, "%s/installed", store_home_dir());
 }
 
 static void find_installed(void)
@@ -231,11 +255,29 @@ static void find_installed(void)
 		}
 		free(d);
 	}
-	if (!found[0])
-		default_dir(found, sizeof found);       /* a copy installed before setup kept a record */
 	snprintf(exe, sizeof exe, "%s" SEP EXE, found);
-	if (!exists(exe))
-		found[0] = found_version[0] = 0;
+	if (!found[0] || !exists(exe))          /* a copy installed before setup kept a record, or one moved since */
+	{
+		default_dir(found, sizeof found);
+		found_version[0] = 0;
+		snprintf(exe, sizeof exe, "%s" SEP EXE, found);
+		if (!exists(exe))
+			found[0] = 0;
+	}
+}
+
+/* Two versions by their numbers: -1, 0 or 1 as a is earlier than, the same as or later than b.
+   One that isn't three numbers, such as a test build's, counts as the same. */
+static int version_cmp(const char *a, const char *b)
+{
+	int x[3], y[3], i;
+
+	if (sscanf(a, "%d.%d.%d", &x[0], &x[1], &x[2]) != 3 || sscanf(b, "%d.%d.%d", &y[0], &y[1], &y[2]) != 3)
+		return 0;
+	for (i = 0; i < 3; i++)
+		if (x[i] != y[i])
+			return x[i] < y[i] ? -1 : 1;
+	return 0;
 }
 
 static long long tree_size(const char *dir, int top)
@@ -307,23 +349,99 @@ static int failed(const char *fmt, const char *arg)
 	return -1;
 }
 
-/* Installs, updates or removes, as action says. The new copy is put together beside the old one
-   and only swapped in once it is all there, so a cancelled or failed install leaves things as
-   they were. prog.done is 1 when it is finished, -1 failed (why in prog.error), -2 cancelled. */
+/* PiArcBoot's own files at the top of its folder: what the installer brings, and what earlier
+   releases left there. Anything else in the folder, such as a portable copy's Data folder, is the
+   user's, and installing, updating and removing leave it where it is. */
+static int own_file(const char *name)
+{
+	char path[1024];
+
+	if (!strcmp(name, "Data"))
+		return 0;
+	if (!strcmp(name, "install.sh") || !strcmp(name, "piarcboot.pdb"))
+		return 1;
+	snprintf(path, sizeof path, "%s" SEP "%s", src, name);
+	return exists(path);
+}
+
+/* The names at the top of a folder, PiArcBoot's own alone when own is set. Returns how many, up
+   to max. */
+static int entries(const char *dir, int own, char names[][256], int max)
+{
+	DIR *d = opendir(dir);
+	struct dirent *e;
+	int n = 0;
+
+	while (d && n < max && (e = readdir(d)))
+		if (strcmp(e->d_name, ".") && strcmp(e->d_name, "..") && (!own || own_file(e->d_name)))
+			snprintf(names[n++], 256, "%s", e->d_name);
+	if (d)
+		closedir(d);
+	return n;
+}
+
+/* Moves those names from one folder to another. Returns how many moved before one didn't. */
+static int move_entries(const char *from, const char *to, char names[][256], int n)
+{
+	char a[1100], b[1100];
+	int i;
+
+	for (i = 0; i < n; i++)
+	{
+		snprintf(a, sizeof a, "%s" SEP "%s", from, names[i]);
+		snprintf(b, sizeof b, "%s" SEP "%s", to, names[i]);
+		if (rename(a, b))
+			break;
+	}
+	return i;
+}
+
+/* The copy of PiArcBoot in a folder is running. Windows lets a running program be renamed but not
+   replaced or deleted, so it is asked first; elsewhere a running program can be replaced. */
+static int in_use(const char *dir)
+{
+#ifdef _WIN32
+	char exe[800];
+	HANDLE h;
+
+	snprintf(exe, sizeof exe, "%s\\" EXE, dir);
+	h = CreateFileA(exe, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+	if (h == INVALID_HANDLE_VALUE)
+		return GetLastError() == ERROR_SHARING_VIOLATION;
+	CloseHandle(h);
+#else
+	(void)dir;
+#endif
+	return 0;
+}
+
+#define MAX_ENTRIES 256
+
+/* Installs, updates or removes, as action says. The new copy is put together beside the old one,
+   then the old copy's own files go aside and the new ones go in, so a cancelled or failed install
+   leaves things as they were. prog.done is 1 when it is finished, -1 failed (why in prog.error),
+   -2 cancelled. */
 static int work(void *unused)
 {
+	static char names[MAX_ENTRIES][256], back[MAX_ENTRIES][256];
 	char stage[800], old[800], rec[800];
+	int n, moved = 0;
 	FILE *f;
 
 	(void)unused;
 	record_path(rec, sizeof rec);
+	if (in_use(dest))
+		return failed("PiArcBoot in %s is in use. Close it, then try again.", dest);
 	if (action == A_REMOVE)
 	{
 		snprintf(prog.step, sizeof prog.step, "Removing %s", dest);
-		snprintf(stage, sizeof stage, "%s" SEP EXE, dest);
-		if (remove(stage))
-			return failed("PiArcBoot in %s is in use. Close it, then try again.", dest);
-		remove_tree(dest);
+		n = entries(dest, 1, names, MAX_ENTRIES);
+		while (n-- > 0)
+		{
+			snprintf(stage, sizeof stage, "%s" SEP "%s", dest, names[n]);
+			remove_tree(stage);
+		}
+		rmdir(dest);            /* only if nothing of the user's is left in it */
 		make_shortcuts(0, 0);
 		remove(rec);
 		prog.percent = 100;
@@ -347,18 +465,19 @@ static int work(void *unused)
 		return failed("PiArcBoot couldn't be copied to %s. Check there is room there and that you can write to it.", dest);
 	}
 	snprintf(prog.step, sizeof prog.step, "Adding the shortcuts");
-	if (is_dir(dest) && rename(dest, old))
+	n = entries(dest, 1, names, MAX_ENTRIES);
+	if (make_dirs(dest) || make_dirs(old) || (moved = move_entries(dest, old, names, n)) < n)
 	{
+		if (is_dir(old) && move_entries(old, dest, names, moved) == moved)
+			remove_tree(old);
 		remove_tree(stage);
-		return failed("PiArcBoot in %s is in use. Close it, then try again.", dest);
+		return failed("PiArcBoot couldn't be put in %s. Check that you can write to it.", dest);
 	}
-	if (rename(stage, dest))
-	{
-		rename(old, dest);
-		remove_tree(stage);
-		return failed("PiArcBoot couldn't be put in %s.", dest);
-	}
+	n = entries(stage, 0, back, MAX_ENTRIES);
+	if (move_entries(stage, dest, back, n) < n)
+		return failed("PiArcBoot couldn't be put in %s. The copy that was there is in the folder beside it with .old on its name.", dest);
 	remove_tree(old);
+	rmdir(stage);
 	make_shortcuts(desktop, menu);
 	if ((f = fopen(rec, "wb")))
 	{
@@ -604,17 +723,43 @@ int setup_main(int argc, char **argv, const char *script)
 	static char field[700];
 	char text[1200], error[300] = "";
 	const char *shot, *drop;
-	int quiet = 0, page = P_WELCOME, choice = 0, start_it = 1, quit = 0, frame_no = 0, i, need;
+	int quiet = 0, remove_it = 0, page = P_WELCOME, choice = 0, start_it = 1, quit = 0, frame_no = 0, i, need;
 	int x = PANEL_W + 26, w = W - PANEL_W - 52, title;
 	uint32_t ink;
 	uint8_t *rgba;
 	rg_input_t held;
 
+	field[0] = 0;
 	for (i = 0; i < argc; i++)
-		quiet |= !strcmp(argv[i], "--quiet");
+		if (!strcmp(argv[i], "--quiet"))
+			quiet = 1;
+		else if (!strcmp(argv[i], "--remove"))
+			quiet = remove_it = 1;
+		else if (!strcmp(argv[i], "--dir") && i + 1 < argc)
+			snprintf(field, sizeof field, "%s", argv[++i]);
+		else if (!strcmp(argv[i], "--test") && i + 1 < argc)
+			i++;            /* main has it */
+		else
+		{
+			fprintf(stderr, "usage: piarcboot setup [--quiet] [--remove] [--dir <folder>]\n"
+				"  --quiet          install or update with the usual settings, showing no pages\n"
+				"  --remove         remove PiArcBoot and its shortcuts, keeping games and saves\n"
+				"  --dir <folder>   install in this folder\n");
+			return 2;
+		}
+	if (script && !exists(script))
+	{
+		fprintf(stderr, "piarcboot setup: there is no test script %s\n", script);
+		return 2;
+	}
 #ifndef _WIN32
 	if (!getenv("DISPLAY") && !getenv("WAYLAND_DISPLAY") && !getenv("SDL_VIDEODRIVER"))
 		quiet = 1;              /* over SSH, say */
+	if (field[0] == '~' && (field[1] == '/' || !field[1]) && getenv("HOME"))
+	{
+		snprintf(text, sizeof text, "%s%s", getenv("HOME"), field + 1);
+		snprintf(field, sizeof field, "%s", text);
+	}
 #endif
 	snprintf(src, sizeof src, "%s", store_exe());
 	src[base_name(src) - src - 1] = 0;
@@ -633,34 +778,57 @@ int setup_main(int argc, char **argv, const char *script)
 		quiet = 1;              /* no desktop to show the pages on after all */
 	if (quiet)
 	{
+		char exe[800];
+
 		free(rgba);
-		if (found[0])
+		snprintf(exe, sizeof exe, "%s" SEP EXE, field);
+		if (field[0] && strcmp(field, found) && exists(exe))
+			snprintf(found, sizeof found, "%s", field);     /* the copy in the folder named, not the one found */
+		if (remove_it)
+		{
+			if (!found[0])
+			{
+				fprintf(stderr, "PiArcBoot isn't installed%s%s.\n", field[0] ? " in " : "", field);
+				return 1;
+			}
+			action = A_REMOVE;
+			snprintf(dest, sizeof dest, "%s", found);
+			printf("Removing PiArcBoot from %s\n", dest);
+		}
+		else if (found[0] && (!field[0] || !strcmp(field, found)))
 		{
 			action = A_UPDATE;
 			snprintf(dest, sizeof dest, "%s", found);
 			has_shortcuts();
 		}
+		else if (field[0])
+			snprintf(dest, sizeof dest, "%s", field);
 		else
 			default_dir(dest, sizeof dest);
-		if (bad_folder(dest))
+		if (!remove_it && bad_folder(dest))
 		{
 			fprintf(stderr, "Can't install in %s: %s\n", dest, bad_folder(dest));
 			return 1;
 		}
-		printf("%s PiArcBoot %s in %s\n", found[0] ? "Updating" : "Installing", PIARCBOOT_VERSION, dest);
+		if (!remove_it)
+			printf("%s PiArcBoot %s in %s\n", action == A_UPDATE ? "Updating" : "Installing", PIARCBOOT_VERSION, dest);
 		work(NULL);
 		if (prog.done != 1)
 		{
 			fprintf(stderr, "%s\n", prog.error);
 			return 1;
 		}
-		printf("PiArcBoot %s is installed in %s%s.\n", PIARCBOOT_VERSION, dest, shortcut_words());
+		if (remove_it)
+			printf("PiArcBoot and its shortcuts are removed. Your games and saves are kept.\n");
+		else
+			printf("PiArcBoot %s is installed in %s%s.\n", PIARCBOOT_VERSION, dest, shortcut_words());
 		return 0;
 	}
 
 	logo = rg_image_texture(rgba, 128, 128, 1);
 	free(rgba);
-	default_dir(field, sizeof field);
+	if (!field[0])
+		default_dir(field, sizeof field);
 	SDL_StartTextInput();
 	if (script)
 		rg_test_load(script);
@@ -714,7 +882,8 @@ int setup_main(int argc, char **argv, const char *script)
 			y = wrap(RG_DESKTOP, x, y + 44, w, ink, text) + 4;
 			rg_display(x, y, w, 28, found);
 			y += 44;
-			snprintf(text, sizeof text, strcmp(found_version, PIARCBOOT_VERSION) ? "Update it to %s" : "Reinstall it", PIARCBOOT_VERSION);
+			snprintf(text, sizeof text, !strcmp(found_version, PIARCBOOT_VERSION) ? "Reinstall it" :
+				 version_cmp(found_version, PIARCBOOT_VERSION) > 0 ? "Replace it with %s, an earlier version" : "Update it to %s", PIARCBOOT_VERSION);
 			rg_radio(x, y, 22, text, &choice, 0, 1);
 			rg_radio(x, y + 30, 22, "Remove it", &choice, 1, 1);
 			wrap(RG_DESKTOP, x, y + 76, w, rg_colour(RG_C4), "Your games and saves are kept either way.");
@@ -800,7 +969,8 @@ int setup_main(int argc, char **argv, const char *script)
 				}
 				else if (action == A_UPDATE)
 				{
-					snprintf(lines[n++], sizeof *lines, "%s PiArcBoot %s in %s", strcmp(found_version, PIARCBOOT_VERSION) ? "Update to" : "Reinstall", PIARCBOOT_VERSION, dest);
+					snprintf(lines[n++], sizeof *lines, "%s PiArcBoot %s in %s", !strcmp(found_version, PIARCBOOT_VERSION) ? "Reinstall" :
+						 version_cmp(found_version, PIARCBOOT_VERSION) > 0 ? "Go back to" : "Update to", PIARCBOOT_VERSION, dest);
 					snprintf(lines[n++], sizeof *lines, "Keep its shortcuts as they are");
 					snprintf(lines[n++], sizeof *lines, "Keep your games and saves");
 				}

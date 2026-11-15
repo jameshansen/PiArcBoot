@@ -304,7 +304,8 @@ static inline ARMword inlLHS(ARMul_State *state,ARMword r)
 #if defined(_MSC_VER) || defined(__WATCOMC__)
 #define ROTATER(n,b) _rotr(n,b)
 #else
-#define ROTATER(n,b) (((n)>>(b))|((n)<<(32-(b))))
+/* (32-b)&31 keeps a rotate by 0 from shifting by 32, which C leaves undefined */
+#define ROTATER(n,b) (((n)>>(b))|((n)<<((32-(b))&31)))
 #endif
 
 /***************************************************************************\

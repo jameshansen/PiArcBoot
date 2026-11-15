@@ -191,7 +191,7 @@ typedef struct
 	int sw, sh;
 } job_t;
 
-static SDL_atomic_t writing;
+static SDL_atomic_t writing, write_failed;
 
 /* Squeezes the parts and writes the file under another name, then gives it its own, so that the
    state there before stays whole until the new one is */
@@ -233,7 +233,7 @@ static int write_thread(void *p)
 {
 	job_t *j = p;
 
-	write_state(j);
+	SDL_AtomicSet(&write_failed, write_state(j) != 0);
 	free(j->raw);
 	free(j->shot);
 	free(j);
@@ -244,6 +244,11 @@ static int write_thread(void *p)
 int state_writing(void)
 {
 	return SDL_AtomicGet(&writing);
+}
+
+int state_write_failed(void)
+{
+	return SDL_AtomicGet(&write_failed);
 }
 
 /* Takes the machine as it is now and writes it to path, with a screenshot sw by sh if shot isn't

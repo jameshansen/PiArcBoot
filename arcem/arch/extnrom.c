@@ -172,7 +172,7 @@ extnrom_load(const char *dir, uint32_t size, uint32_t entry_count, void *address
     start_addr[0] = simple_ecid |
                     (flags << 8) |
                     (reserved << 16) |
-                    ((PRODUCT_TYPE_EXTENSION_ROM & 0xff) << 24);
+                    ((uint32_t)(PRODUCT_TYPE_EXTENSION_ROM & 0xff) << 24);
     start_addr[1] = (PRODUCT_TYPE_EXTENSION_ROM >> 8) |
                     (MANUFACTURER_CODE << 8) |
                     (COUNTRY_CODE << 24);

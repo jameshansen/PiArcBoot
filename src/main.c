@@ -16,6 +16,7 @@
      piarcboot install <game>                    install a game from the JASPP list
      piarcboot add <files>                       add a game from disc images or archives
      piarcboot ls <image>                        the files on a disc image
+     piarcboot arc <archive>                     the files in a Spark or ArcFS archive
      piarcboot extract <file> <folder>           the files in an archive or a disc image, named as HostFS names them
      piarcboot check                             the self-tests */
 #include <ctype.h>
@@ -26,6 +27,41 @@
 #include <zlib.h>
 #include "piarcboot.h"
 #include "default_cmos.h"
+
+static const char usage[] =
+	"usage: piarcboot [<command>]\n"
+	"  (none) or launcher               the launcher\n"
+	"  play <game>                      start an installed game in a window of its own\n"
+	"  add <files>                      add a game from disc images or archives\n"
+	"  install <game>                   install a game from the JASPP list\n"
+	"  classic [<game>]                 install a game from the Classics list, or list them\n"
+	"  setup [--quiet] [--remove] [--dir <folder>]  install PiArcBoot, or remove it\n"
+	"  list                             the JASPP list\n"
+	"  checknew                         note which games new to the feed have floppy images\n"
+	"  ls <image>                       the files on a disc image\n"
+	"  arc <archive>                    the files in a Spark or ArcFS archive\n"
+	"  extract <file> <folder>          the files in an archive or a disc image, as HostFS names them\n"
+	"  icon <file> <out.png> [sprite]   an icon from a sprite file, a disc image or a PNG\n"
+	"  mkicons <packages> <out>         the JASPP games' icons, from their packages\n"
+	"  test <rom> <script> [fdc [blank]]  run a script against the machine, with no window\n"
+	"  check                            the self-tests\n"
+	"  --version                        the version\n"
+	"  --help                           this list\n"
+	"play, launcher and setup take --test <script> to be driven by a script.\n";
+
+/* With no display to open a window on, SDL goes on to the console's own and waits there */
+static int no_display(void)
+{
+#ifndef _WIN32
+	if (!getenv("DISPLAY") && !getenv("WAYLAND_DISPLAY") && !getenv("SDL_VIDEODRIVER"))
+	{
+		fprintf(stderr, "piarcboot: there's no display to open a window on, as DISPLAY and WAYLAND_DISPLAY aren't set. "
+			"To use the console's own, set SDL_VIDEODRIVER=kmsdrm.\n");
+		return 1;
+	}
+#endif
+	return 0;
+}
 
 /* Runs a script against the machine with no window. The clock is fixed, so a run repeats exactly.
    The CMOS RAM starts as it does for a game, or as all zeros with "blank" after the fdc number.
@@ -38,7 +74,10 @@ static int cmd_test(int argc, char **argv)
 	uint8_t cmos[256];
 
 	if (argc < 2)
+	{
+		fprintf(stderr, "usage: piarcboot test <rom> <script> [fdc [blank]]\n");
 		return 2;
+	}
 	machine_fixed_time = 1;
 	emu_extrom_dir = getenv("PIARCBOOT_EXTROM");
 	emu_hostfs_dir = getenv("PIARCBOOT_HOSTFS");
@@ -140,8 +179,20 @@ static int cmd_mkicons(int argc, char **argv)
 	int i, made = 0, plain = 0;
 
 	if (argc < 2)
+	{
+		fprintf(stderr, "usage: piarcboot mkicons <packages folder> <out folder>\n");
+		free(rgba);
 		return 2;
-	make_dirs(argv[1]);
+	}
+	if (!is_dir(argv[0]) || make_dirs(argv[1]))
+	{
+		if (!is_dir(argv[0]))
+			fprintf(stderr, "piarcboot mkicons: there's no folder %s\n", argv[0]);
+		else
+			fprintf(stderr, "piarcboot mkicons: the folder %s can't be made\n", argv[1]);
+		free(rgba);
+		return 1;
+	}
 	for (i = 0; i < catalog_count(); i++)
 	{
 		const entry_t *e = catalog_entry(i);
@@ -168,7 +219,7 @@ static int cmd_mkicons(int argc, char **argv)
 	}
 	printf("%d icons written, %d of them the plain disc\n", made, plain);
 	free(rgba);
-	return 0;
+	return !made;
 }
 
 static int cmd_icon(int argc, char **argv)
@@ -179,7 +230,11 @@ static int cmd_icon(int argc, char **argv)
 	int n, i, pick;
 
 	if (argc < 2)
+	{
+		fprintf(stderr, "usage: piarcboot icon <file, or app or generic> <out.png> [sprite]\n");
+		free(rgba);
 		return 2;
+	}
 	if (!strcmp(argv[0], "app"))
 		icon_app(rgba);
 	else if (!strcmp(argv[0], "generic"))
@@ -205,7 +260,8 @@ static int cmd_icon(int argc, char **argv)
 		d = jfd_flatten(argv[0], &len);
 		if (!d)
 		{
-			perror(argv[0]);
+			fprintf(stderr, "piarcboot icon: %s can't be read\n", argv[0]);
+			free(rgba);
 			return 1;
 		}
 		n = sprites_parse(d, len, &sprites);
@@ -222,8 +278,14 @@ static int cmd_icon(int argc, char **argv)
 			icon_generic(rgba);
 		else
 			icon_render(rgba, &sprites[pick]);
+		sprites_free(sprites, n);
+		free(d);
 	}
-	return png_write(argv[1], rgba, 128, 128) ? 1 : 0;
+	i = png_write(argv[1], rgba, 128, 128);
+	if (i)
+		fprintf(stderr, "piarcboot icon: %s can't be written\n", argv[1]);
+	free(rgba);
+	return i ? 1 : 0;
 }
 
 /* Lists a Spark or ArcFS archive: each file's load and execution addresses, its length, a CRC-32
@@ -288,6 +350,8 @@ static int cmd_check(void)
 		printf("FAIL: a PNG didn't read back as it was written\n");
 		fails++;
 	}
+	free(back);
+	free(rgba);
 	remove(path);
 	if (catalog_count() < 100)
 	{
@@ -321,11 +385,27 @@ int main(int argc, char **argv)
 	const char *script = NULL;
 	int i;
 
+	if (getenv("PIARCBOOT_HOME") && !*getenv("PIARCBOOT_HOME"))     /* set but empty counts as not set */
+#ifdef _WIN32
+		_putenv("PIARCBOOT_HOME=");
+#else
+		unsetenv("PIARCBOOT_HOME");
+#endif
 	for (i = 2; i + 1 < argc; i++)
 		if (!strcmp(argv[i], "--test"))
 			script = argv[i + 1];
+	if (!strcmp(cmd, "--help") || !strcmp(cmd, "-h") || !strcmp(cmd, "help"))
+	{
+		fputs(usage, stdout);
+		return 0;
+	}
+	if (!strcmp(cmd, "--version"))
+	{
+		printf("PiArcBoot %s\n", PIARCBOOT_VERSION);
+		return 0;
+	}
 	if (!strcmp(cmd, "play") && argc > 2)
-		return game_main(argv[2], script);
+		return no_display() ? 1 : game_main(argv[2], script);
 	if (!strcmp(cmd, "test"))
 		return cmd_test(argc - 2, argv + 2);
 	if (!strcmp(cmd, "mkicons"))
@@ -400,6 +480,8 @@ int main(int argc, char **argv)
 			fprintf(stderr, "%s\n", error);
 			return 1;
 		}
+		if (error[0])                   /* discs past the most a game has room for */
+			fprintf(stderr, "%s\n", error);
 		if (!store_load(id, &g))
 		{
 			if (run_installer(&g, id, &p) < 0)
@@ -462,7 +544,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 	if (!cmd[0] || !strcmp(cmd, "launcher"))
-		return launcher_main(script);
-	fprintf(stderr, "usage: piarcboot [play <game>]\n");
+		return no_display() ? 1 : launcher_main(script);
+	fputs(usage, stderr);
 	return 2;
 }

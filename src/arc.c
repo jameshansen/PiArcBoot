@@ -305,7 +305,7 @@ static int spark(const uint8_t *d, size_t len, adfs_file_t **files, int *n, char
 			continue;
 		}
 		if (at + need > len)
-			break;
+			goto damaged;
 		take_name(name, h, 13);
 		clen = rd32(h + 13);
 		crc = (uint16_t)(h[21] | h[22] << 8);
@@ -318,22 +318,25 @@ static int spark(const uint8_t *d, size_t len, adfs_file_t **files, int *n, char
 		if (method == 2 && (load & 0xFFFFFF00u) == 0xFFFDDC00u)    /* a directory: its entries follow */
 		{
 			if (level == MAX_DEPTH)
-				break;
+				goto damaged;
 			add(files, n, dir, name, load, exec, attr, NULL, 0, 1);
 			depth[level++] = strlen(dir);
 			snprintf(dir + strlen(dir), sizeof dir - strlen(dir), "%s%s", dir[0] ? "." : "", name);
 			continue;
 		}
 		if (clen > len - at || olen > 64u << 20)
-			break;
+			goto damaged;
 		if (unarc(method, d + at + (method == 8 || method == 0x7F), clen - (method == 8 || method == 0x7F),
 			  method == 8 || method == 0x7F ? (clen ? d[at] : 0) : 13, olen, crc, &data, error, esize))
 			return -1;
 		add(files, n, dir, name, load, exec, attr & 0xFF, data, olen, 0);
 		at += clen;
 	}
-	if (at >= len || d[at] != 0x1A)
-		return 0;                       /* the end, with nothing after it, as some archives have */
+	/* The end, with no end mark after it, as some archives have. One that stops inside a
+	   directory, or partway through an end mark, has been cut short. */
+	if (!level && (at >= len || d[at] != 0x1A))
+		return 0;
+damaged:
 	snprintf(error, esize, "The archive is damaged: an entry in it runs past its end.");
 	return -1;
 }

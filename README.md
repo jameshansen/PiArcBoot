@@ -111,7 +111,7 @@ curl -fsSL https://github.com/jameshansen/PiArcBoot/releases/latest/download/ins
 
 Or download `PiArcBoot-Installer-RaspberryPi.zip`, extract it and double-click `Install PiArcBoot`. Then in PiArcBoot, choose a game and press **Install**, then **Play**.
 
-Running the installer again offers to update or remove PiArcBoot. Removing it keeps the games installed with it, and a game's Settings in the launcher uninstalls it.
+Running the installer again offers to update or remove PiArcBoot. Removing it keeps the games installed with it, and a game's Settings in the launcher uninstalls it. Without a desktop, as over SSH, the same command ending in `| sh -s -- --remove` removes it.
 
 ### Linux PC
 
@@ -129,7 +129,7 @@ Or download `PiArcBoot-Installer-Windows.zip`, extract it and run `Install PiArc
 
 ### Portable
 
-`PiArcBoot-Portable-RaspberryPi.zip`, `PiArcBoot-Portable-Windows.zip` and `PiArcBoot-Portable-Linux-x86-64.zip` run from wherever they're extracted, with nothing installed. Run `piarcboot`, or `piarcboot.exe` on Windows, in the `PiArcBoot` folder. A portable copy keeps its games and saves in the `Data` folder beside it, so everything stays in that one folder.
+`PiArcBoot-Portable-RaspberryPi.zip`, `PiArcBoot-Portable-Windows.zip` and `PiArcBoot-Portable-Linux-x86-64.zip` run from wherever they're extracted, with nothing installed. Run `piarcboot`, or `piarcboot.exe` on Windows, in the `PiArcBoot` folder. A portable copy keeps its games and saves in the `Data` folder beside it, so they move with the folder.
 
 ## Playing
 
@@ -139,6 +139,9 @@ Click on the picture to give the mouse to the game. The left button is Select, t
 | --- | --- |
 | Ctrl+Alt+Enter | Enter or leave full screen |
 | Ctrl+Alt+1 to Ctrl+Alt+9 | Put that disc in the drive |
+| Ctrl+Alt+S | Save to the slot selected for Auto Save |
+| Ctrl+Alt+R | Restore the slot selected for Auto Save |
+| Ctrl+Alt+P | Pause the game, or carry on |
 | Escape | Take the mouse back from the game |
 | Alt+F4 | Quit, once the game no longer has the mouse |
 
@@ -148,13 +151,17 @@ Escape never reaches the game. A game that wants it gets it from **Send ESC** at
 
 **Save Snapshot** in the Game menu saves what's on screen as a PNG in your Pictures folder, named after the game and the time it was taken.
 
+**Pause** in the Game menu, or Ctrl+Alt+P, stops the game until you choose it again, and Auto Save doesn't count the time it's paused.
+
 In full screen there is no menu bar, and Ctrl+Alt+Enter comes back to the window.
 
-Drag the window's edge or maximize it and the picture grows to fill the frame, keeping its shape. A size from the Game menu puts the window back to an exact multiple.
+Drag the window's edge or maximize it and the picture grows to fill the frame, keeping its shape. A size you drag it to is kept for the next time the game starts, and a size from the Game menu puts the window back to an exact multiple.
+
+Each game opens in one window at a time. Starting it again while it's open says so instead of opening a second copy.
 
 **Crop to Window** in the Game menu shows just the game's windows, for a game that plays in the RISC OS desktop, and the pointer then goes where yours is over the picture. PiArcBoot remembers the choice for each game.
 
-The **Saves** menu has 3 slots, and each one has **Save**, which keeps the whole machine as it is right now, **Restore**, which puts it back the way that slot has it, and **Selected for Auto Save**, which is ticked for the slot that gets written every 30 seconds of play. Restoring a slot also makes it the one Auto Save writes to. A slot holding a save from an earlier session won't be written over until you restore it, save to it or choose a slot. Restoring rolls back anything the game wrote to a floppy as well, but files in a game's own folder stay as they are.
+The **Saves** menu has 3 slots, and each one has **Save**, which keeps the whole machine as it is right now, **Restore**, which puts it back the way that slot has it, and **Selected for Auto Save**, which is ticked for the slot that gets written every 30 seconds of play. Restoring a slot also makes it the one Auto Save writes to. Saving to another slot that already holds a save asks first. A slot holding a save from an earlier session won't be written over until you restore it, save to it or choose a slot. Restoring rolls back anything the game wrote to a floppy as well, but files in a game's own folder stay as they are.
 
 When a game has saves, it starts on the selector, which shows the 3 slots side by side with their screenshots and when each one was saved. **Continue** restores a slot, **New Game** starts the game fresh in an empty one and **Erase** deletes a save after asking first, and whichever slot you pick becomes the one Auto Save writes to. **Open Selector** in the Saves menu brings it up during a game, which waits behind it until you close it and carry on where you were.
 

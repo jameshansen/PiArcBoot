@@ -189,6 +189,7 @@ ARMul_MemoryInit(ARMul_State *state)
 {
   ARMword RAMChunkSize, ROMRAMChunkSize;
   FILE *ROMFile;
+  long romlen;
   int PresPage;
   unsigned int i;
   uint32_t extnrom_size = 0;
@@ -271,10 +272,18 @@ ARMul_MemoryInit(ARMul_State *state)
     return false;
   }
 
-  /* Find the rom file size */
+  /* Find the rom file size. An empty file, a folder, or one bigger than the 8MB the ROM is
+     mapped in, is no ROM. */
   fseek(ROMFile, 0l, SEEK_END);
+  romlen = ftell(ROMFile);
+  rewind(ROMFile);
+  if (romlen <= 0 || romlen > 8*1024*1024 || fgetc(ROMFile) == EOF) {
+    ControlPane_Error(false,"The ROM file '%s' is empty, a folder, or too big to be a ROM", CONFIG.sRomImageName);
+    fclose(ROMFile);
+    return false;
+  }
 
-  MEMC.ROMHighSize = (((ARMword) ftell(ROMFile))+4095)&~4095;
+  MEMC.ROMHighSize = (((ARMword) romlen)+4095)&~4095;
   MEMC.ROMHighMask = MEMC.ROMHighSize-1;
 
   if(MEMC.ROMHighSize & MEMC.ROMHighMask) {
@@ -630,7 +639,7 @@ static ARMword FastMap_LogRamFunc(ARMul_State *state, ARMword addr,ARMword data,
   {
     ARMword shift = ((addr&3)<<3);
     data = (data&0xff)<<shift;
-    data |= orig &~ (0xff<<shift);
+    data |= orig &~ (0xffu<<shift);
   }
   if(orig != data)
   {
@@ -851,7 +860,7 @@ static ARMword FastMap_PhysRamFunc(ARMul_State *state, ARMword addr,ARMword data
   {
     ARMword shift = ((addr&3)<<3);
     data = (data&0xff)<<shift;
-    data |= orig &~ (0xff<<shift);
+    data |= orig &~ (0xffu<<shift);
   }
   if(orig != data)
   {

@@ -22,6 +22,7 @@
 #endif
 #include "piarcboot.h"
 #include "catalog.h"
+#include "disc.h"
 
 #define FEED_URL "http://www.jaspp.org.uk/packages/release"
 #define PACKAGE_HOST "http://www.jaspp.org.uk"
@@ -34,22 +35,27 @@ static int exists(const char *path)
 	return !stat(path, &st);
 }
 
-const char *store_dir(void)
+/* Whether a name ends in an extension, given in lower case, whatever the name's case */
+static int has_ext(const char *name, const char *ext)
+{
+	size_t n = strlen(name), e = strlen(ext), i;
+
+	for (i = 0; i < e && n >= e && tolower((unsigned char)name[n - e + i]) == ext[i]; i++);
+	return n >= e && i == e;
+}
+
+/* The data folder of a copy that isn't portable: PIARCBOOT_HOME, which the tests set, or the
+   user's own */
+const char *store_home_dir(void)
 {
 	static char dir[700];
 
 	if (!dir[0])
 	{
 		const char *home = getenv("PIARCBOOT_HOME");
-		char games[720], portable[720];
 
-		/* A portable copy has a Data folder beside the program, and keeps everything in there */
-		snprintf(portable, sizeof portable, "%s", store_exe());
-		snprintf(portable + (base_name(portable) - portable), sizeof portable - (base_name(portable) - portable), "Data");
 		if (home)
 			snprintf(dir, sizeof dir, "%s", home);
-		else if (is_dir(portable))
-			snprintf(dir, sizeof dir, "%s", portable);
 #ifdef _WIN32
 		else
 			snprintf(dir, sizeof dir, "%s/PiArcBoot", getenv("APPDATA") ? getenv("APPDATA") : ".");
@@ -59,6 +65,22 @@ const char *store_dir(void)
 		else
 			snprintf(dir, sizeof dir, "%s/.local/share/piarcboot", getenv("HOME") ? getenv("HOME") : ".");
 #endif
+	}
+	return dir;
+}
+
+const char *store_dir(void)
+{
+	static char dir[700];
+
+	if (!dir[0])
+	{
+		char games[720], portable[720];
+
+		/* A portable copy has a Data folder beside the program, and keeps everything in there */
+		snprintf(portable, sizeof portable, "%s", store_exe());
+		snprintf(portable + (base_name(portable) - portable), sizeof portable - (base_name(portable) - portable), "Data");
+		snprintf(dir, sizeof dir, "%s", !getenv("PIARCBOOT_HOME") && is_dir(portable) ? portable : store_home_dir());
 		snprintf(games, sizeof games, "%s/games", dir);
 		make_dirs(games);
 	}
@@ -152,12 +174,16 @@ int store_load(const char *id, game_t *g)
 		else if (!strcmp(line, "scale")) g->scale = atoi(v) < 1 ? 1 : atoi(v) > 3 ? 3 : atoi(v);
 		else if (!strcmp(line, "fullscreen")) g->fullscreen = atoi(v);
 		else if (!strcmp(line, "capture")) g->nocapture = !atoi(v);
+		else if (!strcmp(line, "width")) g->win_w = atoi(v) > 0 ? atoi(v) : 0;
+		else if (!strcmp(line, "height")) g->win_h = atoi(v) > 0 ? atoi(v) : 0;
 		else if (!strcmp(line, "desktop")) g->desktop = atoi(v);
 		else if (!strcmp(line, "menu")) g->menu = atoi(v);
 		else if (!strcmp(line, "disc") && g->ndiscs < MAX_DISCS && !strpbrk(v, "/\\"))
 			snprintf(g->disc[g->ndiscs++], sizeof g->disc[0], "%s", v);
 	}
 	free(text);
+	if (!g->title[0])               /* a game.ini that is empty or damaged: the game goes by its folder's name */
+		snprintf(g->title, sizeof g->title, "%s", id);
 	for (i = 0; i < g->ndiscs; i++)
 		for (g->ro[i] = (uint8_t)all_ro, k = 0; k < n_ro; k++)
 			g->ro[i] |= !strcmp(ro[k], g->disc[i]);
@@ -195,6 +221,8 @@ int store_save(const game_t *g)
 		fprintf(f, "crop=%d\n", g->crop);
 	if (g->autosave != 1)
 		fprintf(f, "autosave=%d\n", g->autosave);
+	if (g->win_w > 0 && g->win_h > 0)
+		fprintf(f, "width=%d\nheight=%d\n", g->win_w, g->win_h);
 	for (i = 0; i < g->ndiscs; i++)
 		fprintf(f, "disc=%s\n", g->disc[i]);
 	for (i = 0; i < g->ndiscs; i++)
@@ -224,9 +252,11 @@ int store_list(game_t **out)
 	d = opendir(path);
 	while (d && (e = readdir(d)))
 	{
+		size_t len = strlen(e->d_name);
 		game_t g;
 
-		if (e->d_name[0] == '.' || strlen(e->d_name) >= sizeof g.id || store_load(e->d_name, &g))
+		/* a folder ending .part is an install that hasn't finished */
+		if (e->d_name[0] == '.' || len >= sizeof g.id || (len > 5 && !strcmp(e->d_name + len - 5, ".part")) || store_load(e->d_name, &g))
 			continue;
 		list = realloc(list, (n + 1) * sizeof *list);
 		list[n++] = g;
@@ -250,6 +280,27 @@ static void window_class(const char *id, char *buf, size_t size)
 	for (i = 0; buf[i]; i++)
 		if (!isalnum((unsigned char)buf[i]) && buf[i] != '-' && buf[i] != '_')
 			buf[i] = '_';
+}
+
+/* Text for inside the quotes of an argument on a menu entry's Exec line, as the Desktop Entry
+   spec has it: " ` $ and \ take a backslash before them, then every backslash is doubled as the
+   line is a string, and % is %% */
+static void exec_quote(const char *s, char *out, size_t size)
+{
+	size_t k = 0;
+
+	for (; *s && k + 5 < size; s++)
+	{
+		if (strchr("\"`$\\", *s))       /* \" \` \$ \\, with the backslash doubled */
+		{
+			out[k++] = '\\';
+			out[k++] = '\\';
+		}
+		if (*s == '\\' || *s == '%')    /* a backslash as four, % as two */
+			out[k++] = *s;
+		out[k++] = *s;
+	}
+	out[k] = 0;
 }
 
 #endif
@@ -370,10 +421,12 @@ void store_shortcuts(const game_t *g)
 	shortcut("USERPROFILE", "\\Desktop", "desktop", g, g->desktop);
 	shortcut("APPDATA", "\\Microsoft\\Windows\\Start Menu\\Programs", "menu", g, g->menu);
 #else
-	char cls[160], apps[900], deskdir[900], menu[1100], desk[1100], icon[1024];
+	char cls[160], apps[900], deskdir[900], menu[1100], desk[1100], icon[1024], exe[2800], id[400];
 	FILE *f;
 	int i;
 
+	exec_quote(store_exe(), exe, sizeof exe);
+	exec_quote(g->id, id, sizeof id);
 	window_class(g->id, cls, sizeof cls);
 	store_shortcut_dirs(apps, sizeof apps, deskdir, sizeof deskdir);
 	make_dirs(apps);
@@ -397,7 +450,7 @@ void store_shortcuts(const game_t *g)
 			continue;
 		fprintf(f, "[Desktop Entry]\nType=Application\nName=%s\nComment=An Acorn Archimedes game, started by PiArcBoot\n"
 			   "Exec=\"%s\" play \"%s\"\nIcon=%s\nTerminal=false\nCategories=Game;\nStartupWMClass=%s\n%s",
-			g->title, store_exe(), g->id, icon, cls, !i && !g->menu ? "NoDisplay=true\n" : "");
+			g->title, exe, id, icon, cls, !i && !g->menu ? "NoDisplay=true\n" : "");
 		fclose(f);
 		chmod(path, 0755);
 	}
@@ -478,9 +531,7 @@ static int write_icon(const char *id, const uint8_t *rgba)
    back as it is, in which nothing will be found. */
 static uint8_t *image_sectors(const char *path, size_t *len)
 {
-	const char *dot = strrchr(path, '.');
-
-	if (dot && (!strcmp(dot, ".jfd") || !strcmp(dot, ".JFD")))
+	if (has_ext(path, ".jfd"))
 		return jfd_flatten(path, len);
 	return file_read(path, len);
 }
@@ -918,12 +969,22 @@ static int fail(progress_t *p, const char *why)
 	return -1;
 }
 
+/* Whether the window has cancelled the install, which then ends as failed with its folder gone */
+static int cancelled(progress_t *p, const char *part)
+{
+	if (!p->cancel)
+		return 0;
+	remove_tree(part);
+	fail(p, "Cancelled");
+	return 1;
+}
+
 /* A floppy image's number from its name, which ends F, the game's 5 digits and the disc's 2 */
 static int disc_number(const char *name)
 {
 	size_t n = strlen(name);
 
-	if (n > 4 && (!strcmp(name + n - 4, ".jfd") || !strcmp(name + n - 4, ".JFD")))
+	if (n > 4 && has_ext(name, ".jfd"))
 		n -= 4;
 	if (n >= 8 && name[n - 8] == 'F' && strspn(name + n - 7, "0123456789") >= 7)
 		return (name[n - 2] - '0') * 10 + name[n - 1] - '0';
@@ -1051,7 +1112,7 @@ static int from_release(const entry_t *e, const char *part, int *have, progress_
 	snprintf(p->step, sizeof p->step, "Looking for %s's floppy images...", e->title);
 	p->percent = -1;
 	count = release_images(e->game, names, 40);
-	for (i = 0; i < count; i++)
+	for (i = 0; i < count && !p->cancel; i++)
 	{
 		int number = disc_number(names[i]);
 
@@ -1080,6 +1141,7 @@ int install_jaspp(const entry_t *e, int desktop, int menu, progress_t *p)
 	game_t g;
 
 	memset(&g, 0, sizeof g);
+	g.crop = -1;
 	snprintf(g.id, sizeof g.id, "%s.part", e->id);
 	store_game_path(g.id, "", part, sizeof part);
 	store_game_path(e->id, "", final, sizeof final);
@@ -1087,10 +1149,12 @@ int install_jaspp(const entry_t *e, int desktop, int menu, progress_t *p)
 	if (make_dirs(part))
 		return fail(p, "The game's folder can't be made.");
 
-	if (!whole && e->game)
+	if (!whole && e->game && !p->cancel)
 		got = from_release(e, part, have, p);
-	if (got == 0 && (whole || e->discs > 0 || !e->tested))
+	if (got == 0 && (whole || e->discs > 0 || !e->tested) && !p->cancel)
 		got = from_package(e, part, have, p);
+	if (cancelled(p, part))
+		return -1;
 	if (got < 0)
 	{
 		remove_tree(part);
@@ -1135,6 +1199,8 @@ int install_jaspp(const entry_t *e, int desktop, int menu, progress_t *p)
 		detect(&g);
 		store_save(&g);
 	}
+	if (cancelled(p, part))
+		return -1;
 	/* a game that came with a hard disc installer has the files it copies put on HostFS, and if
 	   that fails it plays from its floppies */
 	if (run_installer(&g, e->id, p) < 0)
@@ -1149,6 +1215,8 @@ int install_jaspp(const entry_t *e, int desktop, int menu, progress_t *p)
 		write_icon(g.id, rgba);
 	}
 #endif
+	if (cancelled(p, part))         /* the last moment, before an older copy is replaced */
+		return -1;
 
 	p->percent = 100;
 	snprintf(g.id, sizeof g.id, "%s", e->id);
@@ -1272,8 +1340,10 @@ static int by_name(const void *a, const void *b)
 }
 
 /* A new game named after a file of it: "Name (1995) (Publisher) F1001501.jfd" gives the title and
-   the line under it, and the title a folder name no other game has */
-static void new_game(game_t *g, const char *file)
+   the line under it, and the title a folder name no other game has. A file whose name gives no
+   title, as a JASPP image in its package is named F<game><disc> alone, takes the name of the zip
+   it came from, less a version after its last _ (Apocalypse_0-3.zip). */
+static void new_game(game_t *g, const char *file, const char *zip)
 {
 	char title[128], path[1300], *p;
 	int i, k;
@@ -1287,6 +1357,14 @@ static void new_game(game_t *g, const char *file)
 		title[k] = 0;
 	else if ((p = strrchr(title, '.')))
 		*p = 0;
+	if (!title[0] && zip)
+	{
+		snprintf(title, sizeof title, "%s", base_name(zip));
+		if ((p = strrchr(title, '_')) && p > title && isdigit((unsigned char)p[1]))
+			*p = 0;
+		new_game(g, title, NULL);
+		return;
+	}
 	if ((p = strstr(title, " (")))
 	{
 		char *year = p + 2, *pub = strstr(year, " (");
@@ -1316,6 +1394,7 @@ static void new_game(game_t *g, const char *file)
 		snprintf(g->id + k, sizeof g->id - k, "-%d", i);
 	}
 	g->scale = 2;
+	g->crop = -1;
 	g->autosave = 1;
 }
 
@@ -1425,7 +1504,7 @@ static int import_apps(char **files, int n, char *id_out, char *error, size_t er
 		total += m;
 	}
 	total = adfs_app_root(all, total);
-	new_game(&g, files[0]);
+	new_game(&g, files[0], NULL);
 	archive_boot(all, total, g.title, g.boot, sizeof g.boot);
 	if (!g.boot[0])
 	{
@@ -1453,16 +1532,87 @@ static int import_apps(char **files, int n, char *id_out, char *error, size_t er
 	return 0;
 }
 
+/* Whether a disc image will do for a game, and if not, why in error, naming it. One that can't be
+   read or is empty won't, nor a JFD or HFE that is damaged or has no sectors, nor one named .jfd or
+   .hfe that isn't one. An image of plain sectors has no mark to know it by, and is taken when it is
+   a whole number of 10K tracks, as every size of disc is, or ADFS can read it. */
+static int bad_image(const char *path, char *error, size_t error_size)
+{
+	const char *name = base_name(path);
+	size_t len = 0, flat_len;
+	uint8_t *d = is_dir(path) ? NULL : jfd_read(path, &len), *flat;
+	int ok = 0, i;
+
+	if (!d || !len)
+		snprintf(error, error_size, d ? "%s is empty." : "%s can't be read.", name);
+	else if ((len >= 4 && !memcmp(d, "JFDI", 4)) || (len >= 8 && !memcmp(d, "HXCPICFE", 8)))
+	{
+		disc_t *disc = disc_parse(d, len);
+
+		for (i = 0; disc && i < DISC_CYLS * 2 && !ok; i++)
+			ok = disc->side[i / 2][i & 1].n > 0;
+		disc_free(disc);
+	}
+	else if (!has_ext(name, ".jfd") && !has_ext(name, ".hfe"))
+	{
+		ok = len % 10240 == 0;
+		if (!ok && (flat = disc_sectors(path, &flat_len)))
+		{
+			adfs_file_t *files;
+			int n = adfs_read(flat, flat_len, &files, NULL, NULL);
+
+			ok = n >= 0;
+			adfs_free(files, n);
+			free(flat);
+		}
+	}
+	if (d && len && !ok)
+		snprintf(error, error_size, "%s is damaged, or isn't a disc image PiArcBoot reads.", name);
+	ok = d && len && ok;
+	free(d);
+	return ok ? 0 : -1;
+}
+
+/* The game that has a disc the same as that file, byte for byte, or NULL */
+static const game_t *same_disc(const char *path, const game_t *games, int n)
+{
+	const game_t *found = NULL;
+	uint8_t *a = NULL, *b;
+	size_t alen = 0, blen;
+	struct stat st, other;
+	char disc[1100];
+	int i, k;
+
+	if (stat(path, &st))
+		return NULL;
+	for (i = 0; i < n && !found; i++)
+		for (k = 0; k < games[i].ndiscs && !found; k++)
+		{
+			store_game_path(games[i].id, games[i].disc[k], disc, sizeof disc);
+			if (stat(disc, &other) || other.st_size != st.st_size || (!a && !(a = file_read(path, &alen))))
+				continue;
+			b = file_read(disc, &blen);
+			if (b && blen == alen && !memcmp(a, b, alen))
+				found = &games[i];
+			free(b);
+		}
+	free(a);
+	return found;
+}
+
 /* Makes a game from disc images of the user's own, or with add_to adds the images to the game of
    that name. A zip file among them stands for the disc images inside it, and archives of
    applications make a game of their own (above). The new game's name is put in id_out. Returns
-   0, or -1 with the reason in error. */
+   0, or -1 with the reason in error. A game has room for MAX_DISCS discs, and when there were more
+   it returns 0 with error saying how many were left out; otherwise error is "". */
 int import_game(char **files, int n, const char *add_to, char *id_out, char *error, size_t error_size)
 {
 	char *list[64], tmp[1024], path[1300];
-	int count = 0, made = 0, i, k, order[MAX_DISCS], sorted = 1, apps = 0;
-	game_t g;
+	const char *zip_name = NULL;
+	int count = 0, made = 0, i, k, order[MAX_DISCS], sorted = 1, apps = 0, left, is_new, before;
+	game_t g, *games;
 
+	error[0] = 0;
 	for (i = 0; i < n; i++)
 		apps += is_app_archive(files[i]);
 	if (apps)               /* archives of applications make a game of their own */
@@ -1476,17 +1626,17 @@ int import_game(char **files, int n, const char *add_to, char *id_out, char *err
 	}
 	snprintf(tmp, sizeof tmp, "%s/import.tmp", store_dir());
 	remove_tree(tmp);
-	for (i = 0; i < n && count < 64; i++)
+	for (i = 0; i < n && count < 64 && !error[0]; i++)
 	{
-		const char *dot = strrchr(files[i], '.');
-
-		if (dot && (!strcmp(dot, ".zip") || !strcmp(dot, ".ZIP")))
+		if (has_ext(files[i], ".zip"))
 		{
 			zipent_t *ents;
 			size_t len, size;
-			uint8_t *zip = file_read(files[i], &len), *data;
+			uint8_t *zip = is_dir(files[i]) ? NULL : file_read(files[i], &len), *data;
 			int m = zip ? zip_list(zip, len, &ents) : 0;
 
+			if (!zip)
+				snprintf(error, error_size, "%s can't be read.", base_name(files[i]));
 			make_dirs(tmp);
 			for (k = 0; k < m && count < 64; k++)
 				if (is_image_name(base_name(ents[k].name)) && (data = zip_get(zip, len, &ents[k], &size)))
@@ -1496,6 +1646,8 @@ int import_game(char **files, int n, const char *add_to, char *id_out, char *err
 						list[count++] = strdup(path);
 					free(data);
 					made = 1;
+					if (!zip_name)
+						zip_name = files[i];
 				}
 			if (m)
 				free(ents);
@@ -1504,20 +1656,34 @@ int import_game(char **files, int n, const char *add_to, char *id_out, char *err
 		else if (is_image_name(base_name(files[i])))
 			list[count++] = strdup(files[i]);
 	}
-	if (!count)
-	{
+	if (!count && !error[0])
 		snprintf(error, error_size, "None of those files is a disc image or an archive of applications. PiArcBoot reads JFD, ADF, ADL and HFE images, and zip, Spark and ArcFS archives.");
+	/* each image has to be one, and not the same as a disc a game has already */
+	k = store_list(&games);
+	for (i = 0; i < count && !error[0]; i++)
+	{
+		const game_t *has;
+
+		if (!bad_image(list[i], error, error_size) && (has = same_disc(list[i], games, k)))
+			snprintf(error, error_size, "%s is already a disc of %s.", base_name(list[i]), has->title);
+	}
+	free(games);
+	if (error[0])
+	{
+		for (i = 0; i < count; i++)
+			free(list[i]);
 		remove_tree(tmp);
 		return -1;
 	}
 	qsort(list, count, sizeof *list, by_name);
 
-	if (!add_to || store_load(add_to, &g))
-		new_game(&g, list[0]);
+	is_new = !add_to || store_load(add_to, &g);
+	if (is_new)
+		new_game(&g, list[0], zip_name);
 
 	store_game_path(g.id, "", path, sizeof path);
 	make_dirs(path);
-	for (i = 0; i < count && g.ndiscs < MAX_DISCS; i++)
+	for (i = 0, before = g.ndiscs; i < count && g.ndiscs < MAX_DISCS; i++)
 	{
 		const char *dot = strrchr(base_name(list[i]), '.');
 		char ext[8] = ".jfd", name[40];
@@ -1538,13 +1704,22 @@ int import_game(char **files, int n, const char *add_to, char *id_out, char *err
 			snprintf(g.disc[g.ndiscs++], sizeof g.disc[0], "%s", name);
 		free(data);
 	}
+	left = count - i;
 	for (i = 0; i < count; i++)
 		free(list[i]);
 	if (made)
 		remove_tree(tmp);
-	if (!g.ndiscs)
+	if (g.ndiscs == before)
 	{
-		snprintf(error, error_size, "The disc images couldn't be copied.");
+		if (is_new)             /* the folder made for it goes again */
+		{
+			store_game_path(g.id, "", path, sizeof path);
+			remove_tree(path);
+		}
+		if (left)
+			snprintf(error, error_size, "A game has room for %d discs, and that one has them all already.", MAX_DISCS);
+		else
+			snprintf(error, error_size, "The disc images couldn't be copied.");
 		return -1;
 	}
 	/* JASPP images say which disc of the set they are, and go in that order however they arrived */
@@ -1588,6 +1763,10 @@ int import_game(char **files, int n, const char *add_to, char *id_out, char *err
 	store_shortcuts(&g);
 	if (id_out)
 		snprintf(id_out, sizeof g.id, "%s", g.id);
+	if (left == 1)
+		snprintf(error, error_size, "A game has room for %d discs, so 1 of these was left out.", MAX_DISCS);
+	else if (left)
+		snprintf(error, error_size, "A game has room for %d discs, so %d of these were left out.", MAX_DISCS, left);
 	return 0;
 }
 
@@ -1671,7 +1850,9 @@ char **pick_files(int *n)
 				 "--file-filter='All files | *' 2>/dev/null");
 		if (!out && run_command("command -v zenity >/dev/null 2>&1"))
 		{
-			out = run_output("kdialog --getopenfilename --multiple --separate-output . 2>/dev/null");
+			out = run_output("kdialog --title 'Add Game: choose its disc images, or an archive of its applications' --getopenfilename \"$HOME\" "
+					 "'Disc images and archives (*.jfd *.JFD *.adf *.ADF *.hfe *.HFE *.adl *.ADL *.zip *.ZIP *.arc *.ARC *.spk *.SPK *,ddc *,3fb *,a91)\nAll files (*)' "
+					 "--multiple --separate-output 2>/dev/null");
 			if (!out && run_command("command -v kdialog >/dev/null 2>&1"))
 			{
 				*n = -1;

@@ -117,6 +117,12 @@ static uint8_t *gunzip(const uint8_t *d, size_t len, size_t *out_len)
 		if (!z.avail_out)
 		{
 			cap *= 2;
+			if (cap > 64 << 20)     /* far more than any floppy image */
+			{
+				inflateEnd(&z);
+				free(out);
+				return NULL;
+			}
 			out = realloc(out, cap);
 		}
 	}
@@ -254,13 +260,14 @@ static int is_jfd(const uint8_t *d, size_t len)
 	return len >= 48 && !memcmp(d, "JFDI", 4);
 }
 
-/* The track table: where it is and how many sides it lists. Returns 0 if it makes no sense. */
+/* The track table: where it is and how many sides it lists. Returns 0 if it makes no sense. The
+   track table, the sector table and the data follow one another. */
 static int jfd_tables(const uint8_t *d, size_t len, uint32_t *tt, uint32_t *st, uint32_t *da, int *sides)
 {
 	*tt = rd32(d + 24);
 	*st = rd32(d + 28);
 	*da = rd32(d + 32);
-	if (*tt >= len || *st > len || *st < *tt)
+	if (*tt >= len || *st > len || *st < *tt || *da < *st || *da > len)
 		return 0;
 	*sides = (int)((*st - *tt) / 4);
 	return 1;
@@ -398,14 +405,27 @@ static int jfd_parse(disc_t *disc, const uint8_t *d, size_t len)
 		return -1;
 	for (i = 0; i < sides; i++)
 	{
-		uint32_t off = rd32(d + tt + 4 * i), p;
+		uint32_t off = rd32(d + tt + 4 * i), p, bytes = 0;
 		int cyl = i / 2, head = i & 1, n = 0, k, high = 0;
 		dside_t *side;
 
-		if (off == 0xffffffff || cyl >= DISC_CYLS || (size_t)st + off >= len)
+		if (off == 0xffffffff || cyl >= DISC_CYLS)
 			continue;
-		for (p = st + off; p + 8 <= len && rd32(d + p) != 0xffffffff; p += 8)
-			n++;
+		/* A side's list of sectors is in the sector table, ending with &FFFFFFFF, and each sector's
+		   data is in the file. JASPP's sides hold 19 sectors and 16K of data at most, so a side of
+		   more than 255 sectors or 64K is damaged, and so is the image. */
+		if (off >= da - st)
+			return -1;
+		for (p = st + off; p + 4 <= da && rd32(d + p) != 0xffffffff; p += 8)
+		{
+			uint32_t w1 = rd32(d + p), w2 = p + 8 <= da ? rd32(d + p + 4) : 0, size = 128u << ((w1 & 15) > 7 ? 7 : (w1 & 15));
+
+			bytes += size;
+			if (p + 8 > da || ++n > 255 || bytes > 65536 || (w2 != 0xffffffff && (uint64_t)da + w2 + size > len))
+				return -1;
+		}
+		if (p + 4 > da)
+			return -1;
 		if (!n)
 			continue;
 		side = &disc->side[cyl][head];
@@ -429,12 +449,8 @@ static int jfd_parse(disc_t *disc, const uint8_t *d, size_t len)
 			high |= s->density == DENS_HIGH;
 			s->len = 128u << code;
 			s->data = calloc(1, s->len);
-			if (w2 != 0xffffffff && (size_t)da + w2 < len)
-			{
-				size_t have = len - da - w2;
-
-				memcpy(s->data, d + da + w2, have < s->len ? have : s->len);
-			}
+			if (w2 != 0xffffffff)
+				memcpy(s->data, d + da + w2, s->len);
 			s->pos = (int)(w1 >> 24);       /* milliseconds for now, or 255 for anywhere */
 		}
 		side->bytes = high ? DISC_HD_BYTES : DISC_DD_BYTES;
@@ -670,8 +686,8 @@ disc_t *disc_parse(const uint8_t *d, size_t len)
 	disc_t *disc = calloc(1, sizeof *disc);
 	int r;
 
-	if (is_jfd(d, len))
-		r = jfd_parse(disc, d, len);
+	if (len >= 4 && !memcmp(d, "JFDI", 4))
+		r = is_jfd(d, len) ? jfd_parse(disc, d, len) : -1;     /* too short for a JFD's header */
 	else if (len >= 8 && !memcmp(d, "HXCPICFE", 8))
 		r = hfe_parse(disc, d, len);
 	else

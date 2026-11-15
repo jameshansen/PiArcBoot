@@ -980,6 +980,47 @@ int fdc_idle(void)
 	return c711_on ? c711_idle() : !F.busy;
 }
 
+/* The name of the folder a disc image is in, which for a game's own discs is the game's id */
+static void folder_name(const char *path, char *out, size_t size)
+{
+	int end = (int)(base_name(path) - path) - 1;
+	char dir[1024];
+
+	snprintf(dir, sizeof dir, "%.*s", end > 0 ? end : 0, path);
+	snprintf(out, size, "%s", base_name(dir));
+}
+
+/* The image a state names, or one of the same name beside an image in the drives now, this drive's
+   first. A game's discs all sit in its own folder, which may have moved since the state was saved,
+   to another drive or with a portable copy. -1 if the state's discs are in another game's folder:
+   a save of another game's, which isn't put back. */
+static int local_image(const drive_t *d, const char *saved, char *out, size_t size)
+{
+	char was[256], now[256];
+	int i;
+
+	folder_name(saved, was, sizeof was);
+	for (i = -1; i < 4; i++)
+	{
+		const disc_t *in = i < 0 ? d->disc : floppy[i].disc;
+		FILE *f;
+
+		if (!in)
+			continue;
+		folder_name(in->path, now, sizeof now);
+		if (strcmp(was, now))
+			return -1;
+		snprintf(out, size, "%.*s%s", (int)(base_name(in->path) - in->path), in->path, base_name(saved));
+		if ((f = fopen(out, "rb")))
+		{
+			fclose(f);
+			return 0;
+		}
+	}
+	snprintf(out, size, "%s", saved);
+	return 0;
+}
+
 /* A drive's head, and the disc in it by its image and what has been written to it since the image
    was made. Reading one back puts that disc in again with just those writes, and they replace
    <image>.sav when it is next written: a disc with none has its .sav taken away now. */
@@ -1014,9 +1055,14 @@ static void drive_snap(snap_t *s, drive_t *d)
 	}
 	if (!s->saving && !s->bad)
 	{
+		char saved[1024];
+
 		disc = NULL;
 		path[sizeof path - 1] = 0;
-		if (has && !(disc = disc_open_plain(path)))
+		snprintf(saved, sizeof saved, "%s", path);
+		if (has && local_image(d, saved, path, sizeof path))
+			s->bad = 1;
+		else if (has && !(disc = disc_open_plain(path)))
 			s->bad = 1;
 		else
 		{

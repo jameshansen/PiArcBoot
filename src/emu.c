@@ -773,7 +773,7 @@ void HDC_Write(ARMul_State *state, uint_fast16_t offset, uint_fast16_t data)
 
 enum { HL_HELLO = 0x20, HL_POLL, HL_EVENT, HL_POINTER };
 
-int emu_hostlink, emu_host_modes, emu_host_clicked, emu_host_missed, emu_host_errors, emu_host_tasks;
+int emu_hostlink, emu_host_modes, emu_host_clicked, emu_host_missed, emu_host_errors, emu_host_tasks, emu_host_error_open;
 int emu_host_nwins, emu_host_wins[31][4];
 int emu_host_modes_at_run = -1, emu_host_errors_at_run = -1, emu_host_tasks_at_run = -1, emu_host_vidc_at_run = -1;
 static struct
@@ -862,8 +862,11 @@ static bool hostlink_swi(ARMul_State *state, unsigned number)
 			emu_host_clicked++;
 		else if (state->Reg[0] == 3)
 			emu_host_missed++;
-		else if (state->Reg[0] == 4 && state->Reg[1] == 1)
-			emu_host_errors++;
+		else if (state->Reg[0] == 4)    /* an error box opened, or with R1 0 closed */
+		{
+			emu_host_errors += state->Reg[1] == 1;
+			emu_host_error_open = state->Reg[1] == 1;
+		}
 		else if (state->Reg[0] == 5)
 			emu_host_tasks++;
 		else if (state->Reg[0] == 6)    /* the windows on the screen: how many, then each one's outline */
@@ -1048,6 +1051,7 @@ void emu_snap(snap_t *s)
 		return;
 	if (emu_host_nwins < 0 || emu_host_nwins > 31)
 		emu_host_nwins = 0;
+	emu_host_error_open = 0;        /* not kept in a state, so that older states still read */
 	mouse_dx = mouse_dy = 0;
 	hl_count = 0;
 	hl_moved = hl_px >= 0;

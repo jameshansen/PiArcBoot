@@ -2477,6 +2477,7 @@ hostfs(ARMul_State *state)
 void
 hostfs_snap(snap_t *s)
 {
+  ARMul_State *state = &statestr;     /* for HOSTFS_ROOT */
   uint32_t n = 0, i, k;
 
   SNAP(s, hostfs_state);
@@ -2494,7 +2495,8 @@ hostfs_snap(snap_t *s)
     uint32_t idx, len;
     uint8_t update;
     int64_t pos;
-    char name[PATH_MAX];
+    char name[PATH_MAX], kept[PATH_MAX];
+    size_t root = strlen(HOSTFS_ROOT);
 
     if (s->saving) {
       while (!open_file[i] || !open_name[i])
@@ -2502,7 +2504,13 @@ hostfs_snap(snap_t *s)
       idx = i++;
       update = open_update[idx];
       pos = (int64_t) ftello64(open_file[idx]);
-      len = (uint32_t) strlen(open_name[idx]);
+      /* A file in the HostFS folder is kept by its name in there, so the state still reads
+         back once the game's folder has moved */
+      if (root && !strncmp(open_name[idx], HOSTFS_ROOT, root))
+        snprintf(kept, sizeof(kept), "HostFS:%s", open_name[idx] + root);
+      else
+        snprintf(kept, sizeof(kept), "%s", open_name[idx]);
+      len = (uint32_t) strlen(kept);
     }
     SNAP(s, idx);
     SNAP(s, update);
@@ -2513,11 +2521,15 @@ hostfs_snap(snap_t *s)
       break;
     }
     if (s->saving) {
-      snap_bytes(s, open_name[idx], len);
+      snap_bytes(s, kept, len);
       continue;
     }
-    snap_bytes(s, name, len);
-    name[len] = 0;
+    snap_bytes(s, kept, len);
+    kept[len] = 0;
+    if (!strncmp(kept, "HostFS:", 7))
+      snprintf(name, sizeof(name), "%s%s", HOSTFS_ROOT, kept + 7);
+    else
+      snprintf(name, sizeof(name), "%s", kept);
     open_file[idx] = fopen64(name, update ? "rb+" : "rb");
     if (!open_file[idx] || fseeko64(open_file[idx], (off64_t) pos, SEEK_SET)) {
       s->bad = 1;

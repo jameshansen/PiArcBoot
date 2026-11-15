@@ -10,7 +10,10 @@
    It is drawn with ROOGUI as a RISC OS application: the list is a window's work area with its
    scroll bar, the buttons are action buttons, and the dialogue boxes are windows with a cream
    title bar, where the button Return presses stands in the default button's surround. What it
-   has to say comes in a box as Wimp_ReportError puts one up. */
+   has to say comes in a box as Wimp_ReportError puts one up.
+
+   From the keyboard, Ctrl+Tab and Ctrl+Shift+Tab change tabs, Up and Down move a highlight
+   through the games, and Return presses the highlighted game's Play or Install. */
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,10 +27,11 @@
 #define BTN_H 26                /* an action button, 52 OS units high */
 #define DLG_W 560
 #define BAR_W 20                /* width of the scroll bar */
-#define MAX_THUMBS 20
+#define MAX_THUMBS 24
 #define TAB_W 122
 #define TABS_Y 46               /* the top of the tab in front, under the search field */
 #define JASPP_URL "https://forums.jaspp.org.uk/"
+#define PIARCBOOT_URL "https://github.com/jameshansen/PiArcBoot"
 
 enum { DLG_NONE, DLG_INSTALL, DLG_PROGRESS, DLG_SETTINGS, DLG_MESSAGE, DLG_CONFIRM };
 enum { TAB_JASPP, TAB_CLASSICS, TAB_MINE, TAB_ABOUT, TABS };
@@ -41,6 +45,9 @@ static int quit;
 static SDL_Texture *app_tex;            /* PiArcBoot's own icon, for the About tab and the corner over the tabs */
 static char search[64];                 /* what the search field holds: each tab shows only the games that match it */
 static int source_focus;                /* the caret is in the field for a new PackMan source, not the search field */
+static int sel[TABS] = { -1, -1, -1, -1 };     /* the game row highlighted from the keyboard in each tab, counting down the list, or -1 */
+static int rows[TABS];                  /* how many game rows each tab showed when it was last drawn */
+static int row_n, row_sel_y, reveal, enter;    /* rows counted as the list is drawn, where the highlighted one came, and the keys for it this frame */
 
 /* Whether a game's title or its line of information holds the search, in any case */
 static int matches(const char *title, const char *info)
@@ -74,7 +81,10 @@ static char dlg_image[MAX_DISCS][64];   /* each disk's image format */
 static sprite_t *dlg_sprites;
 static int dlg_nsprites, dlg_sprite;
 static SDL_Texture *dlg_thumbs[MAX_THUMBS];
+static int dlg_disc = -1;               /* the disk the confirm box asks about removing, or -1 for the whole game */
+static int dlg_scroll, dlg_fitted;      /* how far the settings box's contents are scrolled, and that the window has been made to fit it */
 static progress_t progress;
+static int stopping, closing;           /* the install was cancelled, and the window was closed while it was going */
 static volatile int feed_arrived;
 
 /* Icons already turned into pictures, by game */
@@ -156,7 +166,7 @@ static int default_button(int x, int y, int w, int h, const char *label, int ena
 	return rg_default_button(x - 4, y - 4, w + 8, h + 8, label, enabled);
 }
 
-static void close_settings(void)
+static void free_sprites(void)
 {
 	int i;
 
@@ -169,18 +179,66 @@ static void close_settings(void)
 	sprites_free(dlg_sprites, dlg_nsprites);
 	dlg_sprites = NULL;
 	dlg_nsprites = 0;
+	dlg_sprite = -1;
+}
+
+static void close_settings(void)
+{
+	free_sprites();
 	dlg = DLG_NONE;
+}
+
+/* Finds afresh what the discs of the game in the settings box offer: the applications it can
+   start by, which are on its first disc, and with sprites set, the sprites its icon can be made
+   from, each name once. What was chosen from them stays chosen where it is still there. */
+static void scan_discs(int sprites)
+{
+	char boot[64], sprite[16];
+	uint8_t *rgba;
+	int i, k, n;
+
+	snprintf(boot, sizeof boot, "%s", dlg_nchoices ? dlg_choices[dlg_choice] : dlg_game.boot);
+	snprintf(sprite, sizeof sprite, "%s", dlg_sprite >= 0 ? dlg_sprites[dlg_sprite].name : dlg_game.sprite);
+	dlg_nchoices = dlg_choice = 0;
+	if (dlg_game.jaspp || dlg_game.classic)
+		return;
+	dlg_nchoices = store_boot_choices(&dlg_game, dlg_choices, 40);
+	for (i = 0; i < dlg_nchoices; i++)
+		if (!strcmp(dlg_choices[i], boot))
+			dlg_choice = i;
+	if (!sprites)
+		return;
+	free_sprites();
+	n = store_sprites(&dlg_game, &dlg_sprites);
+	for (i = 0; i < n; i++)         /* a sprite on several discs comes once */
+	{
+		for (k = 0; k < dlg_nsprites && strcmp(dlg_sprites[k].name, dlg_sprites[i].name); k++);
+		if (k < dlg_nsprites)
+			free(dlg_sprites[i].rgba);
+		else
+			dlg_sprites[dlg_nsprites++] = dlg_sprites[i];
+	}
+	rgba = malloc(128 * 128 * 4);
+	for (i = 0; i < dlg_nsprites && i < MAX_THUMBS; i++)
+	{
+		icon_render(rgba, &dlg_sprites[i]);
+		dlg_thumbs[i] = rg_image_texture(rgba, 128, 128, 1);
+		if (!strcmp(dlg_sprites[i].name, sprite))
+			dlg_sprite = i;
+	}
+	free(rgba);
 }
 
 static void open_settings(const game_t *g)
 {
-	uint8_t *rgba = malloc(128 * 128 * 4);
 	int i;
 
+	free_sprites();
 	dlg_game = *g;
 	dlg_desktop = g->desktop;
 	dlg_capture = !g->nocapture;
 	dlg_menu = g->menu;
+	dlg_scroll = dlg_fitted = 0;
 	for (i = 0; i < g->ndiscs; i++)
 	{
 		const char *dot = strrchr(g->disc[i], '.');
@@ -203,25 +261,82 @@ static void open_settings(const game_t *g)
 			snprintf(dlg_image[i], sizeof dlg_image[i], "%s, %dK", ext, (int)(st.st_size / 1024));
 	}
 	snprintf(dlg_name, sizeof dlg_name, "%s", g->title);
-	dlg_sprite = -1;
-	dlg_nchoices = dlg_choice = dlg_nsprites = 0;
-	if (!g->jaspp && !g->classic)
-	{
-		dlg_nchoices = store_boot_choices(g, dlg_choices, 40);
-		for (i = 0; i < dlg_nchoices; i++)
-			if (!strcmp(dlg_choices[i], g->boot))
-				dlg_choice = i;
-		dlg_nsprites = store_sprites(g, &dlg_sprites);
-		for (i = 0; i < dlg_nsprites && i < MAX_THUMBS; i++)
-		{
-			icon_render(rgba, &dlg_sprites[i]);
-			dlg_thumbs[i] = rg_image_texture(rgba, 128, 128, 1);
-			if (!strcmp(dlg_sprites[i].name, g->sprite))
-				dlg_sprite = i;
-		}
-	}
-	free(rgba);
+	dlg_nchoices = 0;
+	scan_discs(1);
 	dlg = DLG_SETTINGS;
+}
+
+/* Exchanges two entries of an array, each size bytes and no more than 64 */
+static void swap_entries(void *array, size_t size, int a, int b)
+{
+	char t[64], *p = array;
+
+	memcpy(t, p + a * size, size);
+	memcpy(p + a * size, p + b * size, size);
+	memcpy(p + b * size, t, size);
+}
+
+/* Takes entry n out of an array of count entries, each size bytes, closing the gap */
+static void drop_entry(void *array, size_t size, int n, int count)
+{
+	char *p = array;
+
+	memmove(p + n * size, p + (n + 1) * size, (size_t)(count - n - 1) * size);
+}
+
+/* Moves a disk of the game in the settings box to another place in its list, with what the box
+   shows about it. The order is saved with OK. */
+static void swap_discs(int a, int b)
+{
+	swap_entries(dlg_game.disc, sizeof dlg_game.disc[0], a, b);
+	swap_entries(dlg_ro, sizeof dlg_ro[0], a, b);
+	swap_entries(dlg_changed, sizeof dlg_changed[0], a, b);
+	swap_entries(dlg_image, sizeof dlg_image[0], a, b);
+	if (!a || !b)
+		scan_discs(0);          /* the game starts from what is on its first disk */
+}
+
+/* The points the game window learnt to change disks at name the disks by their places in the
+   list, so they go when the places change */
+static void forget_swaps(const char *id)
+{
+	char path[1100];
+
+	store_game_path(id, "swaps.bin", path, sizeof path);
+	remove(path);
+}
+
+/* Takes disk n out of the game in the settings box. Its image and what the game saved to it are
+   deleted and the game is saved without it at once; the box keeps its other changes. */
+static void remove_disc(int n)
+{
+	char path[1100];
+	game_t g;
+	int i, k;
+
+	if (!store_load(dlg_game.id, &g))
+	{
+		for (i = k = 0; i < g.ndiscs; i++)
+			if (strcmp(g.disc[i], dlg_game.disc[n]))
+			{
+				memmove(g.disc[k], g.disc[i], sizeof g.disc[0]);
+				g.ro[k++] = g.ro[i];
+			}
+		g.ndiscs = k;
+		store_save(&g);
+	}
+	store_game_path(dlg_game.id, dlg_game.disc[n], path, sizeof path);
+	remove(path);
+	snprintf(path + strlen(path), sizeof path - strlen(path), ".sav");
+	remove(path);
+	forget_swaps(dlg_game.id);
+	drop_entry(dlg_game.disc, sizeof dlg_game.disc[0], n, dlg_game.ndiscs);
+	drop_entry(dlg_ro, sizeof dlg_ro[0], n, dlg_game.ndiscs);
+	drop_entry(dlg_changed, sizeof dlg_changed[0], n, dlg_game.ndiscs);
+	drop_entry(dlg_image, sizeof dlg_image[0], n, dlg_game.ndiscs);
+	dlg_game.ndiscs--;
+	scan_discs(1);
+	reload_games();
 }
 
 /* The game the install box is for: from the JASPP list, or with dlg_classic set, the Classics tab */
@@ -276,6 +391,7 @@ static int start_setup(const char *id)
 	progress.percent = -1;
 	snprintf(progress.step, sizeof progress.step, "Getting ready...");
 	snprintf(progress.error, sizeof progress.error, "The game's installer couldn't run.");
+	stopping = 0;
 	dlg = DLG_PROGRESS;
 	SDL_DetachThread(SDL_CreateThread(setup_thread, "setup", NULL));
 	return 1;
@@ -326,7 +442,9 @@ static void add_files(char **files, int n)
 		close_settings();
 		reload_games();
 		icon_forget(dlg_game.id);
-		if (!start_setup(dlg_game.id) && !store_load(dlg_game.id, &g))
+		if (error[0])           /* added, with a word on what was left out */
+			message(error, RG_INFORMATION);
+		else if (!start_setup(dlg_game.id) && !store_load(dlg_game.id, &g))
 			open_settings(&g);
 		return;
 	}
@@ -339,28 +457,55 @@ static void add_files(char **files, int n)
 	}
 	reload_games();
 	tab = TAB_MINE;
-	if (!start_setup(id) && !store_load(id, &g))
+	if (error[0])                   /* added, with a word on what was left out */
+		message(error, RG_INFORMATION);
+	else if (!start_setup(id) && !store_load(id, &g))
 		open_settings(&g);              /* a new game opens on its settings, to be named and given its icon */
 }
 
-/* One game's row, a slab with the icon at its left and the buttons at its right. Returns 1 for
+/* Counts a game row as the list is drawn at y. Returns 1 for the one highlighted from the keyboard. */
+static int next_row(int y)
+{
+	if (row_n == sel[tab])
+		row_sel_y = y;
+	return row_n++ == sel[tab];
+}
+
+/* One game's row, a slab with the icon at its left and the buttons at its right, filled with
+   cream, the colour of the input focus, when it is highlighted from the keyboard. Returns 1 for
    its default button (Play, or Install), 2 for Settings. */
 static int draw_row(int x, int y, int w, SDL_Texture *icon, const char *title, const char *info,
-		    const game_t *g, int is_installed)
+		    const game_t *g, int is_installed, int lit)
 {
 	int hit = 0, bx = x + w - 22 - BTN_W, by = y + (ROW_H - BTN_H) / 2, i;
 	int text_w = w - 104 - (is_installed ? 2 * BTN_W + 56 : BTN_W + 40);
 	char label[32];
 
+	if (lit)
+		rg_fill(x, y, w, ROW_H, rg_colour(RG_CREAM));
 	rg_bevel(x, y, w, ROW_H, 0);
 	rg_image(icon, x + 10, y + 8, 76, 76);
 	rg_text_fit(RG_DESKTOP, x + 102, y + 19, text_w, rg_colour(7), title);
 	if (g && !g->jaspp && !g->classic)
-		for (i = 0; i < g->ndiscs && i < 6; i++)
+	{
+		/* a label for each disk, as many as there is room for before the buttons, the last
+		   place going to how many more there are when they don't all fit */
+		int room = text_w + 2, shown = g->ndiscs;
+
+		snprintf(label, sizeof label, "+%d more", g->ndiscs);
+		if (g->ndiscs * 62 - 4 > room)
+			for (shown = 0; (shown + 1) * 62 + rg_text_w(RG_DESKTOP, label) <= room; shown++);
+		for (i = 0; i < shown; i++)
 		{
 			snprintf(label, sizeof label, "Disk %d", i + 1);
 			rg_display(x + 100 + i * 62, y + 45, 58, 24, label);
 		}
+		if (shown < g->ndiscs)
+		{
+			snprintf(label, sizeof label, "+%d more", g->ndiscs - shown);
+			rg_text_centre(RG_DESKTOP, x + 100 + shown * 62, y + 45, rg_text_w(RG_DESKTOP, label), 24, rg_colour(7), label);
+		}
+	}
 	else
 		rg_text_fit(SMALL, x + 102, y + 45, text_w, rg_colour(6), info);
 	if (is_installed)
@@ -375,10 +520,48 @@ static int draw_row(int x, int y, int w, SDL_Texture *icon, const char *title, c
 	return hit;
 }
 
-static void play(const game_t *g)
+/* The number a disk goes by: for one of the user's own games its place in the list, which can be
+   changed, and otherwise the one in its file's name (disc4.jfd is Disk 4), a JASPP game's number
+   in its set */
+static int disk_number(const game_t *g, int n)
 {
-	if (spawn_game(g->id))
-		message("The game couldn't be started.", RG_ERROR);
+	int number = 0;
+
+	if (!g->jaspp && !g->classic)
+		return n + 1;
+	return sscanf(g->disc[n], "disc%d", &number) == 1 && number > 0 ? number : n + 1;
+}
+
+/* Starts a game, or says what keeps it from starting: settings that can't be read or name no
+   disc images, or an image that is missing or empty */
+static void play(const game_t *listed)
+{
+	const char *name = listed->title[0] ? listed->title : listed->id;
+	const char *again = listed->jaspp || listed->classic ? "Uninstall it and install it again." : "Remove it and add it again.";
+	char path[1100], text[400] = "";
+	struct stat st;
+	game_t g;
+	int i;
+
+	if (store_load(listed->id, &g))
+		snprintf(text, sizeof text, "%s can't be started, as its settings file, game.ini, can't be read. %s", name, again);
+	else if (!g.ndiscs)     /* a game with no discs is in a HostFS folder, or in its installer's copy of one */
+	{
+		store_game_path(g.id, "hostfs", path, sizeof path);
+		if (!is_dir(path) && (store_game_path(g.id, "installed", path, sizeof path), !is_dir(path)))
+			snprintf(text, sizeof text, "%s can't be started, as its settings file, game.ini, names no disc images: it is empty or damaged. %s", name, again);
+	}
+	for (i = 0; !text[0] && i < g.ndiscs; i++)
+	{
+		store_game_path(g.id, g.disc[i], path, sizeof path);
+		if (stat(path, &st) || !st.st_size)
+			snprintf(text, sizeof text, "%s can't be started, as the image of its disk %d, %s, is %s. %s", name, disk_number(&g, i), g.disc[i],
+				 stat(path, &st) ? "missing from its folder" : "empty", again);
+	}
+	if (!text[0] && spawn_game(listed->id))
+		snprintf(text, sizeof text, "The game couldn't be started.");
+	if (text[0])
+		message(text, RG_ERROR);
 }
 
 /* Text that opens a web page when it is clicked, underlined in the Wimp's dark blue. Returns its width. */
@@ -472,12 +655,19 @@ static int draw_about(int x, int y, int w)
 	rg_text_centre(RG_DESKTOP, x, y + 48, w, 20, rg_colour(7), "Acorn Archimedes games, booted straight from their disc images");
 	rg_text_centre(RG_DESKTOP, x, y + 72, w, 20, rg_colour(7), "By James Hansen");
 	{
+		static const struct { const char *text, *url; } links[] = {
+			{ "PiArcBoot on GitHub", PIARCBOOT_URL }, { "Issues", PIARCBOOT_URL "/issues" }, { "Discord", "https://discord.gg/88VzuWSYUc" },
+		};
 		const char *gpl = "GNU General Public License v3.0";
-		int gw = rg_text_w(RG_DESKTOP, gpl);
+		int gw = rg_text_w(RG_DESKTOP, gpl), k, lx = x + w / 2 + 16;
 
 		link(RG_DESKTOP, x + (w - gw) / 2, y + 96, gpl, "https://www.gnu.org/licenses/gpl-3.0.html");
+		for (k = 0; k < 3; k++)         /* PiArcBoot's own pages, in a row under it */
+			lx -= (rg_text_w(RG_DESKTOP, links[k].text) + 32) / 2;
+		for (k = 0; k < 3; k++)
+			lx += link(RG_DESKTOP, lx, y + 120, links[k].text, links[k].url) + 32;
 	}
-	y += 140;
+	y += 164;
 	rg_text(RG_DESKTOP_BOLD, x + 2, y, rg_colour(7), "Made with");
 	y += 30;
 	for (i = 0; i < sizeof parts / sizeof *parts; i++)
@@ -516,8 +706,10 @@ static int draw_classics(int x, int y, int w)
 
 	for (s = 0; s < CLASSIC_SECTIONS; s++)
 	{
-		int any = 0, pass;
+		int any = 0, pass, total = 0;
 
+		for (i = 0; i < classic_count(); i++)
+			total += classic_entry(i)->section == s;
 		rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), sections[s].title);
 		y += 26;
 		y += credit(x + 2, y + 4, w - 4, sections[s].lead, sections[s].name, sections[s].url);
@@ -529,7 +721,7 @@ static int draw_classics(int x, int y, int w)
 			{
 				const classic_t *c = classic_entry(i);
 				game_t *g = installed(c->id);
-				int hit;
+				int hit, lit;
 
 				if (c->section != s || (g != NULL) != (pass == 0) || !matches(g ? g->title : c->title, g ? g->info : c->info))
 					continue;
@@ -540,7 +732,10 @@ static int draw_classics(int x, int y, int w)
 					head = 1;
 				}
 				any = 1;
-				hit = draw_row(x, y, w, icon_for(c->id, g), g ? g->title : c->title, g ? g->info : c->info, g, g != NULL);
+				lit = next_row(y);
+				hit = draw_row(x, y, w, icon_for(c->id, g), g ? g->title : c->title, g ? g->info : c->info, g, g != NULL, lit);
+				if (lit && enter)
+					hit = 1;
 				if (hit == 1 && g)
 					play(g);
 				else if (hit == 1)
@@ -558,7 +753,7 @@ static int draw_classics(int x, int y, int w)
 		}
 		if (!any)
 		{
-			rg_text(SMALL, x + 2, y + 2, rg_colour(6), search[0] ? "None of its games match the search." :
+			rg_text(SMALL, x + 2, y + 2, rg_colour(6), search[0] && total ? "None of its games match the search." :
 				"The sources' lists arrive once the network is reached.");
 			y += 24;
 		}
@@ -585,9 +780,26 @@ static int draw_classics(int x, int y, int w)
 	rg_field(x, y, w - BTN_W - 16, 26, new_source, sizeof new_source, source_focus);
 	if (rg_button(x + w - BTN_W, y, BTN_W, BTN_H, "Add", new_source[0] != 0) || (source_focus && rg_in.key == SDLK_RETURN && new_source[0]))
 	{
+		char why[400];
+
+		for (i = 0; i < n && strcmp(urls[i], new_source); i++);
 		classics_add_source(new_source);
-		new_source[0] = 0;
-		SDL_DetachThread(SDL_CreateThread(classics_thread, "classics", NULL));
+		if (classics_sources(urls, 32) > n)
+		{
+			new_source[0] = 0;
+			SDL_DetachThread(SDL_CreateThread(classics_thread, "classics", NULL));
+		}
+		else            /* not taken: the field keeps it to be put right */
+		{
+			if (i < n)
+				snprintf(why, sizeof why, "That source is in the list already.");
+			else if (n >= 32)
+				snprintf(why, sizeof why, "There can be 32 sources at most. Remove one to add another.");
+			else
+				snprintf(why, sizeof why, "\"%.80s\" can't be added as a source. A source's address begins with http:// or https://, "
+					 "and has no spaces, quotes, $ or \\ in it.", new_source);
+			message(why, RG_ERROR);
+		}
 	}
 	y += 34;
 	rg_text(SMALL, x + 2, y, rg_colour(6), "A source is the address of a PackMan package index, as PackMan's Sources window takes it.");
@@ -620,13 +832,21 @@ static rg_window_t list;        /* the pane the list is in: a work area with its
    from the one the scroll bar was drawn for, when the window is to be drawn again. */
 static int draw_list(int vx, int vy, int vw, int vh)
 {
-	int y, x = vx + 10, w = vw - 20, i, hit, any = 0, before = content_h[tab];
+	int y, x = vx + 10, w = vw - 20, i, hit, lit, any = 0, before = content_h[tab], moved = 0;
 	int px = rg_in.x, py = rg_in.y, wheel = rg_in.wheel;
 
 	if (rg_in.key == SDLK_PAGEDOWN) scroll[tab] += vh - 40;
 	if (rg_in.key == SDLK_PAGEUP) scroll[tab] -= vh - 40;
 	if (rg_in.key == SDLK_HOME) scroll[tab] = 0;
 	if (rg_in.key == SDLK_END) scroll[tab] = content_h[tab];
+	if ((rg_in.key == SDLK_DOWN || rg_in.key == SDLK_UP) && rows[tab])     /* the highlight to the next row or the one before */
+	{
+		sel[tab] = sel[tab] < 0 ? 0 : sel[tab] + (rg_in.key == SDLK_DOWN ? 1 : -1);
+		sel[tab] = sel[tab] < 0 ? 0 : sel[tab] >= rows[tab] ? rows[tab] - 1 : sel[tab];
+		reveal = 1;
+	}
+	enter = !source_focus && (rg_in.key == SDLK_RETURN || rg_in.key == SDLK_KP_ENTER);
+	row_n = 0;
 	if (rg_over(vx, vy, vw + BAR_W, vh))
 		scroll[tab] -= wheel * 60;      /* most of a row for each notch of the wheel */
 	list.x = vx;
@@ -661,12 +881,12 @@ static int draw_list(int vx, int vy, int vw, int vh)
 			for (i = 0; i < n_games; i++)
 				if (games[i].jaspp && matches(games[i].title, games[i].info))
 				{
-					if (y + ROW_H > vy && y < vy + vh)
-					{
-						hit = draw_row(x, y, w, icon_for(games[i].id, &games[i]), games[i].title, games[i].info, &games[i], 1);
-						if (hit == 1) play(&games[i]);
-						if (hit == 2) open_settings(&games[i]);
-					}
+					lit = next_row(y);
+					hit = y + ROW_H > vy && y < vy + vh ?
+					      draw_row(x, y, w, icon_for(games[i].id, &games[i]), games[i].title, games[i].info, &games[i], 1, lit) : 0;
+					if (lit && enter) hit = 1;
+					if (hit == 1) play(&games[i]);
+					if (hit == 2) open_settings(&games[i]);
 					y += ROW_H + 8;
 				}
 			y += 4;
@@ -684,15 +904,18 @@ static int draw_list(int vx, int vy, int vw, int vh)
 				y += 30;
 				any = 2;
 			}
+			lit = next_row(y);
+			hit = lit && enter;
 			if (y + ROW_H > vy && y < vy + vh)
 			{
 				snprintf(info, sizeof info, "%s%s", e->info, e->tested ? "" : e->info[0] ? ", new on JASPP and untested" : "New on JASPP and untested");
-				if (draw_row(x, y, w, icon_for(e->id, NULL), e->title, info, NULL, 0))
-				{
-					dlg_entry = *e;
-					dlg_classic = 0;
-					dlg = DLG_INSTALL;
-				}
+				hit |= draw_row(x, y, w, icon_for(e->id, NULL), e->title, info, NULL, 0, lit);
+			}
+			if (hit)
+			{
+				dlg_entry = *e;
+				dlg_classic = 0;
+				dlg = DLG_INSTALL;
 			}
 			y += ROW_H + 8;
 		}
@@ -704,19 +927,23 @@ static int draw_list(int vx, int vy, int vw, int vh)
 	}
 	else
 	{
+		int added = 0;          /* games of the user's own, whatever the search */
+
+		for (i = 0; i < n_games; i++)
+			added |= !games[i].jaspp && !games[i].classic;
 		for (i = 0; i < n_games; i++)
 			if (!games[i].jaspp && !games[i].classic && matches(games[i].title, games[i].info))
 			{
-				if (y + ROW_H > vy && y < vy + vh)
-				{
-					hit = draw_row(x, y, w, icon_for(games[i].id, &games[i]), games[i].title, games[i].info, &games[i], 1);
-					if (hit == 1) play(&games[i]);
-					if (hit == 2) open_settings(&games[i]);
-				}
+				lit = next_row(y);
+				hit = y + ROW_H > vy && y < vy + vh ?
+				      draw_row(x, y, w, icon_for(games[i].id, &games[i]), games[i].title, games[i].info, &games[i], 1, lit) : 0;
+				if (lit && enter) hit = 1;
+				if (hit == 1) play(&games[i]);
+				if (hit == 2) open_settings(&games[i]);
 				y += ROW_H + 8;
 				any = 1;
 			}
-		if (!any && search[0])
+		if (!any && search[0] && added)
 		{
 			rg_text(SMALL, x + 2, y + 2, rg_colour(6), "None of your games match the search.");
 			y += 24;
@@ -735,7 +962,7 @@ static int draw_list(int vx, int vy, int vw, int vh)
 			free(files);
 		}
 		y += BTN_H + 12;
-		rg_text_centre(SMALL, vx, y, vw, 14, rg_colour(6), any || search[0] ? "Disc images and archives can also be dropped onto this window." :
+		rg_text_centre(SMALL, vx, y, vw, 14, rg_colour(6), added ? "Disc images and archives can also be dropped onto this window." :
 			       "Add a game from its disc images (JFD, ADF, ADL or HFE) or an archive of its applications (zip, Spark or ArcFS).");
 		y += 20;
 	}
@@ -743,13 +970,28 @@ static int draw_list(int vx, int vy, int vw, int vh)
 	rg_in.x = px;
 	rg_in.y = py;
 
+	/* the highlight stays on a row the list has, and a row it has just moved to is scrolled into view */
+	rows[tab] = row_n;
+	if (sel[tab] >= row_n)
+		sel[tab] = row_n - 1;
+	if (reveal && sel[tab] >= 0)
+	{
+		if (row_sel_y < vy + 4)
+			scroll[tab] -= vy + 4 - row_sel_y;
+		else if (row_sel_y + ROW_H > vy + vh - 4)
+			scroll[tab] += row_sel_y + ROW_H - (vy + vh - 4);
+		moved = 1;
+	}
+	reveal = 0;
+
 	content_h[tab] = y + scroll[tab] - vy + 4;
-	return content_h[tab] != before;
+	return content_h[tab] != before || moved;
 }
 
 /* What the launcher has to say or ask, in a box as Wimp_ReportError puts one up: the message
    beside a sprite for its kind, and the buttons under a divider. Asking whether to remove a
-   game, the button that removes it takes a click: Return doesn't press it. */
+   game or one of its disks, the button that removes it takes a click: Return doesn't press it,
+   and Cancel goes back to the settings box as it was left. */
 static void draw_report(int win_w, int win_h)
 {
 	int confirm = dlg == DLG_CONFIRM, r;
@@ -758,7 +1000,7 @@ static void draw_report(int win_w, int win_h)
 		rg_in.key = 0;
 	r = rg_error_box_with((win_w - RG_ERROR_W) / 2, (win_h - RG_ERROR_H + 20) / 2,
 			      !confirm && dlg_kind == RG_ERROR ? "Error from PiArcBoot" : "Message from PiArcBoot", dlg_text,
-			      confirm ? RG_QUESTION : dlg_kind, confirm ? dlg_game.jaspp || dlg_game.classic ? "Uninstall" : "Remove" : "OK",
+			      confirm ? RG_QUESTION : dlg_kind, confirm ? dlg_disc < 0 && (dlg_game.jaspp || dlg_game.classic) ? "Uninstall" : "Remove" : "OK",
 			      confirm ? "Cancel" : NULL);
 	if (!confirm)
 	{
@@ -766,9 +1008,11 @@ static void draw_report(int win_w, int win_h)
 			dlg = DLG_NONE;
 	}
 	else if (r == 2)
+		dlg = DLG_SETTINGS;
+	else if (r == 1 && dlg_disc >= 0)
 	{
-		close_settings();
-		open_settings(&dlg_game);
+		remove_disc(dlg_disc);
+		dlg = DLG_SETTINGS;
 	}
 	else if (r == 1)
 	{
@@ -805,10 +1049,13 @@ static int toggle(int x, int y, int w, int h, const char *first, const char *sec
 
 /* The game's disks as a table, a row each from the first down: its image and format, whether the
    game has saved changes to it (kept beside the image, which stays as it was), and whether it
-   goes in the drive to be written to or read only */
-static void draw_disks(int x, int y, int w)
+   goes in the drive to be written to or read only. For one of the user's own games with more
+   than one disk, each row also has arrows that move it up or down the list and a button that
+   removes it. */
+static void draw_disks(int x, int y, int w, int mine)
 {
-	int i, cols[4] = { x + 8, x + 78, x + 238, x + w - 196 };
+	int edit = mine && dlg_game.ndiscs > 1, mode_w = edit ? 160 : 188, i;
+	int cols[4] = { x + 8, x + 78, edit ? x + 166 : x + 238, x + w - (edit ? 84 : 8) - mode_w };
 
 	rg_text(RG_DESKTOP_BOLD, cols[0], y + 2, rg_colour(7), "Disk");
 	rg_text(RG_DESKTOP_BOLD, cols[1], y + 2, rg_colour(7), "Image");
@@ -818,37 +1065,79 @@ static void draw_disks(int x, int y, int w)
 	rg_slab(x, y, w, dlg_game.ndiscs * DISK_ROW + 6, rg_colour(0), 1);
 	for (i = 0; i < dlg_game.ndiscs; i++)
 	{
-		int ry = y + 3 + i * DISK_ROW, number = 0;
+		int ry = y + 3 + i * DISK_ROW, move = 0;
 		char text[64];
 
 		if (i)
 			rg_fill(x + 3, ry, w - 6, 1, rg_colour(2));
-		if (sscanf(dlg_game.disc[i], "disc%d", &number) != 1 || number < 1)
-			number = i + 1;
-		snprintf(text, sizeof text, "%d", number);
+		snprintf(text, sizeof text, "%d", disk_number(&dlg_game, i));
 		rg_text(RG_DESKTOP, cols[0] + 8, ry + 5, rg_colour(7), text);
 		rg_text_fit(RG_DESKTOP, cols[1], ry + 5, cols[2] - cols[1] - 8, rg_colour(7), dlg_image[i]);
 		rg_text(RG_DESKTOP, cols[2], ry + 5, rg_colour(dlg_changed[i] ? RG_RED : 6), dlg_changed[i] ? "Saved" : "None");
-		toggle(cols[3], ry + 2, 188, DISK_ROW - 4, "Read/write", "Read only", &dlg_ro[i]);
+		toggle(cols[3], ry + 2, mode_w, DISK_ROW - 4, "Read/write", "Read only", &dlg_ro[i]);
+		if (!edit)
+			continue;
+		/* up takes it nearer the top, as far as the first place, and down nearer the bottom */
+		if (rg_bump(cols[0] + 30, ry + 7, &move, i < dlg_game.ndiscs - 1 ? -1 : 0, i ? 1 : 0))
+			swap_discs(i, i - move);
+		if (rg_button(x + w - 78, ry + 2, 70, DISK_ROW - 4, "Remove", 1))
+		{
+			snprintf(dlg_text, sizeof dlg_text, "Remove disk %d from %s? Its image, and anything the game saved to it, will be deleted.",
+				 i + 1, dlg_game.title);
+			dlg_disc = i;
+			dlg = DLG_CONFIRM;
+		}
 	}
 }
 
+/* Makes the window tall enough for a box h high, as far as the display it is on has room */
+static void grow_window(int h)
+{
+	SDL_Rect r;
+	int ww, wh, wx, wy, top = 0, want = rg_to_window((int)(h * rg_scale + 0.5f));
+
+	if (SDL_GetDisplayUsableBounds(SDL_GetWindowDisplayIndex(rg_win), &r) ||
+	    (SDL_GetWindowFlags(rg_win) & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FULLSCREEN)))
+		return;
+	SDL_GetWindowSize(rg_win, &ww, &wh);
+	SDL_GetWindowPosition(rg_win, &wx, &wy);
+	SDL_GetWindowBordersSize(rg_win, &top, NULL, NULL, NULL);
+	if (want > r.h - top)
+		want = r.h - top;
+	if (want <= wh)
+		return;
+	SDL_SetWindowSize(rg_win, ww, want);
+	if (wy + want > r.y + r.h)              /* moved up as far as it has to be to stay on the display */
+		SDL_SetWindowPosition(rg_win, wx, r.y + r.h - want);
+}
+
+static rg_window_t pane;        /* the settings box's contents, when they are too tall for the window */
+
 /* The dialogue box that is open, as a window over the launcher. Its buttons sit at the bottom
-   right with the default one last, and its close icon cancels it. */
+   right with the default one last, and its close icon cancels it. A settings box too tall for
+   the window has the window made taller to fit it, as far as the display allows, and what still
+   doesn't fit scrolls in a pane above its buttons. */
 static void draw_dialog(int win_w, int win_h)
 {
 	int mine = dlg == DLG_SETTINGS && !dlg_game.jaspp && !dlg_game.classic;
 	int thumbs = dlg_nsprites < MAX_THUMBS ? dlg_nsprites : MAX_THUMBS;
 	int disks = dlg == DLG_SETTINGS && dlg_game.ndiscs ? DISK_TABLE_H(dlg_game.ndiscs) + 8 : 0;
-	int h = (mine ? 264 + (thumbs > 8 ? (thumbs - 1) / 8 * 54 : 0) : 160) + disks + (dlg == DLG_SETTINGS ? 30 : 0);
-	int w = DLG_W < win_w - 24 ? DLG_W : win_w - 24;
-	int x = (win_w - w) / 2, y = (win_h - h) / 2, ok_x, by, cx, cy, i, closed;
+	int full = (mine ? 264 + (thumbs > 8 ? (thumbs - 1) / 8 * 54 : 0) : dlg == DLG_PROGRESS ? 172 : 160) + disks + (dlg == DLG_SETTINGS ? 30 : 0);
+	int h = full < win_h - 8 ? full : win_h - 8;
+	int w = DLG_W < win_w - 24 ? DLG_W : win_w - 24, cw = w;
+	int x = (win_w - w) / 2, y = (win_h - h) / 2, ok_x, by, cx, cy, i, closed, add = 0, px = rg_in.x, py = rg_in.y;
 	char title[200];
 
 	if (dlg == DLG_MESSAGE || dlg == DLG_CONFIRM)
 	{
 		draw_report(win_w, win_h);
 		return;
+	}
+	if (dlg == DLG_SETTINGS && !dlg_fitted)
+	{
+		dlg_fitted = 1;
+		if (h < full)
+			grow_window(full + 8);
 	}
 	if (y < 4)
 		y = 4;
@@ -873,13 +1162,21 @@ static void draw_dialog(int win_w, int win_h)
 			memset(&progress, 0, sizeof progress);
 			progress.percent = -1;
 			snprintf(progress.step, sizeof progress.step, "Getting ready...");
+			stopping = 0;
 			dlg = DLG_PROGRESS;
 			SDL_DetachThread(SDL_CreateThread(install_thread, "install", NULL));
 		}
 		break;
 
+		/* Cancel, Escape and the close icon ask the install to stop, which it does between its
+		   steps; the box goes once it has, with nothing to say about it */
 		case DLG_PROGRESS:
-		rg_text_fit(RG_DESKTOP, cx, cy + 14, w - 44, rg_colour(7), progress.step);
+		if (rg_button(ok_x, by, BTN_W, BTN_H, "Cancel", !stopping) || (!stopping && (rg_in.key == SDLK_ESCAPE || closed)))
+		{
+			progress.cancel = 1;
+			stopping = 1;
+		}
+		rg_text_fit(RG_DESKTOP, cx, cy + 14, w - 44, rg_colour(7), stopping ? "Stopping the install..." : progress.step);
 		rg_slab(cx, cy + 46, w - 44, 18, rg_colour(0), 1);
 		if (progress.percent >= 0)
 			rg_fill(cx + 2, cy + 48, (w - 48) * progress.percent / 100, 14, rg_colour(RG_DARK_BLUE));
@@ -889,7 +1186,9 @@ static void draw_dialog(int win_w, int win_h)
 
 			rg_fill(cx + 2 + (t < span ? t : 2 * span - t), cy + 48, 80, 14, rg_colour(RG_DARK_BLUE));
 		}
-		if (progress.done == 1)
+		if (progress.done && closing)           /* the window was closed during the install, which has stopped */
+			quit = 1;
+		else if (progress.done == 1)
 		{
 			game_t g;
 
@@ -904,40 +1203,48 @@ static void draw_dialog(int win_w, int win_h)
 		}
 		else if (progress.done == -1)
 		{
-			message(progress.error, RG_ERROR);
+			if (stopping)
+			{
+				reload_games();
+				dlg = DLG_NONE;
+			}
+			else
+				message(progress.error, RG_ERROR);
 			setup_id[0] = 0;
 		}
 		break;
 
 		case DLG_SETTINGS:
+		if (h < full)
+		{
+			pane.x = x + 12;
+			pane.y = y + 30;
+			pane.w = pane.ex = w - 43;
+			pane.h = by - 14 - pane.y;
+			pane.ey = full - 82;    /* the contents, with 10 pixels above and below */
+			pane.sy = dlg_scroll;
+			pane.flags = RG_W_VSCROLL;
+			rg_window(&pane);
+			dlg_scroll = pane.sy;
+			cw = w - 19;            /* the contents end as far in from the scroll bar as they do from the box's edge */
+			cy = pane.y + 10 - dlg_scroll;
+			rg_clip(pane.x, pane.y, pane.w, pane.h);
+			if (!rg_over(pane.x, pane.y, pane.w, pane.h))
+				rg_in.x = rg_in.y = -1;         /* a pointer outside the pane touches nothing in it */
+		}
 		if (mine)
 		{
 			/* labels end where the fields begin, as a RISC OS dialogue box sets them */
 			rg_label(cx, cy, 72, 26, "Name", 1);
-			rg_field(cx + 80, cy, w - 124, 26, dlg_name, sizeof dlg_name, 1);
+			rg_field(cx + 80, cy, cw - 124, 26, dlg_name, sizeof dlg_name, 1);
 			rg_option(cx + 80, cy + 36, 22, "Create desktop shortcut", &dlg_desktop, 1);
-			rg_option(cx + 80 + (w - 124) / 2, cy + 36, 22, "Create menu shortcut", &dlg_menu, 1);
+			rg_option(cx + 80 + (cw - 124) / 2, cy + 36, 22, "Create menu shortcut", &dlg_menu, 1);
 			rg_label(cx, cy + 68, 72, 26, "Starts by", 1);
 			snprintf(title, sizeof title, "%s%s", dlg_choices[dlg_choice][0] ? "running " : "booting the disc", dlg_choices[dlg_choice]);
 			rg_display(cx + 80, cy + 68, 230, 26, title);
 			if (dlg_nchoices > 1)   /* the arrows step through the applications on its discs */
 				rg_bump(cx + 80 + 236, cy + 73, &dlg_choice, 0, dlg_nchoices - 1);
-			if (rg_button(x + w - 22 - 112, cy + 68, 112, BTN_H, "Add disks...", dlg_game.ndiscs < MAX_DISCS))
-			{
-				int n;
-				char **files = pick_files(&n);
-
-				if (n < 0)
-				{
-					close_settings();
-					message("Drop the extra disc images onto the game's settings to add them.", RG_INFORMATION);
-				}
-				add_files(files, n);
-				while (n-- > 0)
-					free(files[n]);
-				free(files);
-				return;
-			}
+			add = rg_button(x + cw - 22 - 112, cy + 68, 112, BTN_H, "Add disks...", dlg_game.ndiscs < MAX_DISCS);
 			if (dlg_nsprites)
 				rg_label(cx, cy + 108, 72, 48, "Icon", 1);
 			else
@@ -953,19 +1260,44 @@ static void draw_dialog(int win_w, int win_h)
 					dlg_sprite = i;
 			}
 			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 8, 22, "Capture the mouse with a click", &dlg_capture, 1);
-			draw_disks(cx, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 38, w - 44);
+			draw_disks(cx, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 38, cw - 44, 1);
 		}
 		else
 		{
 			rg_option(cx, cy, 22, "Create desktop shortcut", &dlg_desktop, 1);
 			rg_option(cx, cy + 30, 22, "Create menu shortcut", &dlg_menu, 1);
 			rg_option(cx, cy + 60, 22, "Capture the mouse with a click", &dlg_capture, 1);
-			draw_disks(cx, cy + 96, w - 44);
+			draw_disks(cx, cy + 96, cw - 44, 0);
 		}
+		if (h < full)
+		{
+			rg_unclip();
+			rg_in.x = px;
+			rg_in.y = py;
+		}
+		if (add)
+		{
+			int n;
+			char **files = pick_files(&n);
+
+			if (n < 0)
+			{
+				close_settings();
+				message("Drop the extra disc images onto the game's settings to add them.", RG_INFORMATION);
+			}
+			add_files(files, n);
+			while (n-- > 0)
+				free(files[n]);
+			free(files);
+			return;
+		}
+		if (dlg != DLG_SETTINGS)        /* a disk's Remove asks first */
+			break;
 		if (rg_button(cx, by, BTN_W + 10, BTN_H, mine ? "Remove" : "Uninstall", 1))
 		{
-			snprintf(dlg_text, sizeof dlg_text, "%s %s? Its disc images, and anything it saved to them, will be deleted.",
+			snprintf(dlg_text, sizeof dlg_text, "%s %s? Its disc images, anything it saved to them and its save states will be deleted.",
 				 mine ? "Remove" : "Uninstall", dlg_game.title);
+			dlg_disc = -1;
 			dlg = DLG_CONFIRM;
 		}
 		else if (rg_button(ok_x - BTN_W - 20, by, BTN_W, BTN_H, "Cancel", 1) || rg_in.key == SDLK_ESCAPE || closed)
@@ -979,8 +1311,18 @@ static void draw_dialog(int win_w, int win_h)
 				g.desktop = dlg_desktop;
 				g.menu = dlg_menu;
 				g.nocapture = !dlg_capture;
-				for (i = 0; i < g.ndiscs && i < dlg_game.ndiscs; i++)
-					g.ro[i] = (uint8_t)dlg_ro[i];
+				if (g.ndiscs == dlg_game.ndiscs)        /* the disks in the order the box has them */
+				{
+					for (i = 0; i < g.ndiscs; i++)
+						if (strcmp(g.disc[i], dlg_game.disc[i]))
+						{
+							forget_swaps(g.id);
+							break;
+						}
+					memcpy(g.disc, dlg_game.disc, sizeof g.disc);
+					for (i = 0; i < g.ndiscs; i++)
+						g.ro[i] = (uint8_t)dlg_ro[i];
+				}
 				if (mine)
 				{
 					if (dlg_name[0])
@@ -1039,17 +1381,23 @@ static void draw_tabs(void)
 /* The search field over the tabs. It has the caret unless the field for a new PackMan source has. */
 static void draw_search(int w)
 {
-	int lw = rg_text_w(RG_DESKTOP, "Search:"), fw = w - 34 - lw;
+	int lw = rg_text_w(RG_DESKTOP, "Search:"), fw = w - 34 - lw, cleared = 0;
 
 	if (fw > 280)
 		fw = 280;
 	rg_text_centre(RG_DESKTOP, 12, 10, lw, 28, rg_colour(7), "Search:");
 	if (rg_in.pressed)
 		source_focus = 0;               /* and the Classics tab gives it back for a click in its field */
-	if (!source_focus && rg_in.key == SDLK_ESCAPE)
+	if (!source_focus && rg_in.key == SDLK_ESCAPE && search[0])
+	{
 		search[0] = 0;
-	if (rg_field(20 + lw, 10, fw, 28, search, sizeof search, !source_focus))
-		memset(scroll, 0, sizeof scroll);       /* each list from its top for what it now shows */
+		cleared = 1;
+	}
+	if (rg_field(20 + lw, 10, fw, 28, search, sizeof search, !source_focus) || cleared)
+	{
+		memset(scroll, 0, sizeof scroll);       /* each list from its top for what it now shows, with nothing highlighted */
+		memset(sel, -1, sizeof sel);
+	}
 
 	/* PiArcBoot's name and logo in the corner the field leaves */
 	{
@@ -1061,6 +1409,19 @@ static void draw_search(int w)
 			rg_text_centre(font, lx - 8 - tw, 6, tw, 34, rg_colour(7), "PiArcBoot");
 		}
 	}
+}
+
+/* The window was closed. An install that is going is stopped first, and the window stays until it
+   has; closing it again meanwhile quits at once. */
+static void close_window(void)
+{
+	if (dlg == DLG_PROGRESS && !progress.done && !closing)
+	{
+		progress.cancel = 1;
+		stopping = closing = 1;
+	}
+	else
+		quit = 1;
 }
 
 int launcher_main(const char *test_script)
@@ -1109,7 +1470,7 @@ int launcher_main(const char *test_script)
 		{
 			rg_event(&e);
 			if (e.type == SDL_QUIT)
-				quit = 1;
+				close_window();
 			else if (e.type == SDL_DROPFILE)
 			{
 				dropped = realloc(dropped, (n_dropped + 1) * sizeof *dropped);
@@ -1119,7 +1480,8 @@ int launcher_main(const char *test_script)
 		}
 		if (test_script)
 		{
-			quit |= rg_test_step(frame, &shot, &drop);
+			if (rg_test_step(frame, &shot, &drop))
+				close_window();         /* as closing the window does */
 			if (drop)
 			{
 				dropped = realloc(dropped, (n_dropped + 1) * sizeof *dropped);
@@ -1156,6 +1518,8 @@ int launcher_main(const char *test_script)
 		for (i = 0; i < TABS; i++)
 			if (rg_in.pressed && rg_over(10 + i * (TAB_W - 1), TABS_Y, TAB_W, 31))
 				tab = i;
+		if (rg_in.key == SDLK_TAB && (SDL_GetModState() & KMOD_CTRL))  /* Ctrl+Tab to the next tab, and with Shift the one before */
+			tab = (tab + (SDL_GetModState() & KMOD_SHIFT ? TABS - 1 : 1)) % TABS;
 		draw_search(w);
 		if (draw_list(11, TABS_Y + 32, w - 22 - BAR_W + 1, h - TABS_Y - 43))
 			drawn = 0;              /* once more, with the scroll bar the length the list makes it */

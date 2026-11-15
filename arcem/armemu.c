@@ -316,7 +316,7 @@ static ARMword RHSFunc_ROR_Reg(ARMul_State *state,ARMword instr,ARMword base)
     base = state->Reg[base];
     ARMul_Icycles(state,1);
     shamt = state->Reg[BITS(8,11)] & 0x1f;
-  return ((base << (32 - shamt)) | (base >> shamt));
+  return ROTATER(base, shamt);          /* safe when shamt is 0 */
 }
 
 static const RHSFunc RHSFuncs[8] = {RHSFunc_LSL_Imm,RHSFunc_LSL_Reg,RHSFunc_LSR_Imm,RHSFunc_LSR_Reg,RHSFunc_ASR_Imm,RHSFunc_ASR_Reg,RHSFunc_ROR_Imm,RHSFunc_ROR_Reg};

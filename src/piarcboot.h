@@ -40,12 +40,14 @@ uint32_t *state_shot(const char *path, int *w, int *h); /* a state's screenshot,
 uint8_t *state_take(size_t *len);                       /* the machine now, held in memory; NULL if it can't be now */
 int state_put(const uint8_t *parts, size_t len);        /* and back to it: -1, and the machine as it was, if it can't be */
 int state_writing(void);                        /* a state is still being written */
+int state_write_failed(void);                   /* the last one written on its own thread didn't reach its file */
 int state_load(const char *path, char *why, size_t size);       /* -1, the machine as it was and why in why, if it can't be */
 
 /* ROO311's HostLink module, which works the desktop for the game window */
 extern int emu_hostlink;        /* it has made itself known */
 extern int emu_host_modes;      /* screen mode changes it has reported */
 extern int emu_host_errors;     /* error boxes it has seen open */
+extern int emu_host_error_open; /* one is open just now */
 extern int emu_host_tasks;      /* tasks it has seen start in the desktop */
 extern int emu_host_modes_at_run, emu_host_errors_at_run, emu_host_tasks_at_run;      /* those counts when it last took up a command to start, or -1 */
 extern int emu_host_vidc_at_run;        /* and machine_mode_sets then */
@@ -157,7 +159,9 @@ typedef struct
 	int fullscreen;
 	int crop;               /* 1 shows just the windows on the screen, 0 all of it, -1 as its presets say */
 	int autosave;           /* the save slot written every 30 seconds of play, 1 to 3, or 0 for none */
-	int nocapture;          /* the mouse isn't captured: the pointer goes where the host's is */	int desktop, menu;      /* has a desktop shortcut, a menu entry */
+	int nocapture;          /* the mouse isn't captured: the pointer goes where the host's is */
+	int win_w, win_h;       /* the game window's size as the player last dragged it, in pixels, or 0 */
+	int desktop, menu;      /* has a desktop shortcut, a menu entry */
 	int ndiscs;
 	char disc[MAX_DISCS][40];       /* the disc image files in its folder */
 	uint8_t ro[MAX_DISCS];          /* that disc goes in write protected */
@@ -179,11 +183,13 @@ typedef struct
 {
 	volatile int percent;   /* 0 to 100, or -1 when there is no telling */
 	volatile int done;      /* 1 finished, -1 failed */
+	volatile int cancel;    /* set by the window to stop it: the install ends as soon as it can, as failed */
 	char step[160];
 	char error[240];
 } progress_t;
 
 const char *store_dir(void);
+const char *store_home_dir(void);      /* the data folder of a copy that isn't portable, whatever this one is */
 const char *store_exe(void);
 char *store_asset(const char *name, char *buf, size_t size);
 void store_game_path(const char *id, const char *file, char *buf, size_t size);
