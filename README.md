@@ -20,7 +20,14 @@ PiArcBoot lists 113 of the JASPP games. Install fetches a game from JASPP and Pl
 
 The Classics tab has freeware that comes as RISC OS applications rather than disc images, such as Hamsters, Cycloids, Asylum and Oddball (former commercial games their authors and publishers let Acorn Arcade give away), along with the desktop games from PackMan, RISC OS Open's package manager. Install turns each one into floppy images, and it starts straight into play the same way the JASPP games do. Star Fighter 3000 is too big for a floppy and needs more than RISC OS 3.11 had, so it goes in a folder the machine reads directly, with ROO311's support pack beside it. Disc images of your own become games too, and so do archives of RISC OS applications, with an icon made from a sprite inside.
 
-## The games
+## Games
+
+PiArcBoot lists 113 JASPP games and 23 Classics, among them:
+
+- **JASPP**: Lemmings, Lemmings 2: The Tribes, Gods, Magic Pockets, Cannon Fodder, SpeedBall 2, Sensible Soccer, Chocks Away, Lotus Turbo Challenge 2, Populous, SimCity, James Pond, Fire & Ice, Chuck Rock and Pac-mania
+- **Classics**: Elite, Star Fighter 3000, Hamsters, Asylum and Cycloids
+
+[GAMES.md](GAMES.md) lists every one, with its year, publisher and how it installs.
 
 The JASPP tab is JASPP's own package feed, cut down to the games that start the same way on ROO311 as on RISC OS 3.11. Most take over the screen, and the few that play in the RISC OS desktop, such as SimCity and Mah-Jong Patience, are shown cropped to their windows. A game JASPP adds later appears by itself once its floppy images are there, marked as untested.
 

@@ -427,7 +427,8 @@ int main(int argc, char **argv)
 		classics_refresh();
 		classics_load();
 		for (i = 0; i < classic_count(); i++)
-			printf("%s\t%s\t%s\t%s\n", classic_entry(i)->id, classic_entry(i)->boot, classic_entry(i)->prefix, classic_entry(i)->url);
+			printf("%s\t%s\t%s\t%s\t%s\t%s\t%d\n", classic_entry(i)->id, classic_entry(i)->boot, classic_entry(i)->prefix, classic_entry(i)->url,
+			       classic_entry(i)->title, classic_entry(i)->info, classic_entry(i)->section);
 		return 0;
 	}
 	if (!strcmp(cmd, "classic"))                    /* install a game from the Classics tab, as Install does */
