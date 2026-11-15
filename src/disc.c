@@ -691,22 +691,13 @@ static void sav_path(const disc_t *d, char *buf, size_t size)
 	snprintf(buf, size, "%s.sav", d->path);
 }
 
-/* Puts the sides kept in <image>.sav over the image. A file that isn't one of these is left be. */
-static void sav_load(disc_t *disc)
+/* Puts the sides kept in a .sav file's bytes over the disc. Bytes that aren't one of these are left be. */
+void disc_apply(disc_t *disc, const uint8_t *d, size_t len)
 {
-	char path[1100];
-	size_t len, at = 16;
-	uint8_t *d;
+	size_t at = 16;
 
-	sav_path(disc, path, sizeof path);
-	d = file_read(path, &len);
-	if (!d)
+	if (!d || len < 16 || memcmp(d, SAV_MAGIC, 16))
 		return;
-	if (len < 16 || memcmp(d, SAV_MAGIC, 16))
-	{
-		free(d);
-		return;
-	}
 	while (at + 12 <= len && !memcmp(d + at, "SIDE", 4))
 	{
 		int cyl = d[at + 4], head = d[at + 5], n = (int)rd16(d + at + 6), bytes = (int)rd32(d + at + 8), k, ok = 1;
@@ -748,18 +739,31 @@ static void sav_load(disc_t *disc)
 		}
 		disc_set_side(disc, cyl, head, s, n, bytes);
 	}
+}
+
+static void sav_load(disc_t *disc)
+{
+	char path[1100];
+	size_t len;
+	uint8_t *d;
+
+	sav_path(disc, path, sizeof path);
+	d = file_read(path, &len);
+	disc_apply(disc, d, len);
 	free(d);
 }
 
-int disc_save(disc_t *disc)
+/* What has been written to the disc since its image was made, as the bytes of a .sav file, or
+   NULL if nothing has */
+uint8_t *disc_changes(const disc_t *disc, size_t *len)
 {
-	char path[1100];
 	size_t size = 16, at;
 	uint8_t *out;
-	int c, h, k, r;
+	int c, h, k;
 
-	if (!disc || !disc->changed || !disc->path[0])
-		return 0;
+	*len = 0;
+	if (!disc || !disc->changed)
+		return NULL;
 	for (c = 0; c < DISC_CYLS; c++)
 		for (h = 0; h < 2; h++)
 			if (disc->side[c][h].changed)
@@ -774,7 +778,7 @@ int disc_save(disc_t *disc)
 	for (c = 0; c < DISC_CYLS; c++)
 		for (h = 0; h < 2; h++)
 		{
-			dside_t *side = &disc->side[c][h];
+			const dside_t *side = &disc->side[c][h];
 
 			if (!side->changed)
 				continue;
@@ -801,13 +805,28 @@ int disc_save(disc_t *disc)
 				at += 16 + s->len;
 			}
 		}
+	*len = at;
+	return out;
+}
+
+int disc_save(disc_t *disc)
+{
+	char path[1100];
+	size_t len;
+	uint8_t *out;
+	int r;
+
+	if (!disc || !disc->changed || !disc->path[0])
+		return 0;
+	out = disc_changes(disc, &len);
 	sav_path(disc, path, sizeof path);
-	r = file_write(path, out, at);
+	r = file_write(path, out, len);
 	free(out);
 	return r;
 }
 
-disc_t *disc_open(const char *path)
+/* The image as it was made, with no saved changes */
+disc_t *disc_open_plain(const char *path)
 {
 	size_t len;
 	uint8_t *d = jfd_read(path, &len);
@@ -817,10 +836,17 @@ disc_t *disc_open(const char *path)
 		return NULL;
 	disc = disc_parse(d, len);
 	free(d);
-	if (!disc)
-		return NULL;
-	snprintf(disc->path, sizeof disc->path, "%s", path);
-	sav_load(disc);
+	if (disc)
+		snprintf(disc->path, sizeof disc->path, "%s", path);
+	return disc;
+}
+
+disc_t *disc_open(const char *path)
+{
+	disc_t *disc = disc_open_plain(path);
+
+	if (disc)
+		sav_load(disc);
 	return disc;
 }
 

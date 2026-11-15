@@ -26,6 +26,7 @@
 #include "piarcboot.h"
 #include "disc.h"
 #include "core.h"
+#include "../arcem/snap.h"
 
 #define REV ((uint64_t)MACHINE_HZ / 5)          /* a revolution at 300 rpm */
 #define MS ((uint64_t)MACHINE_HZ / 1000)
@@ -969,4 +970,86 @@ void FDC_SetLEDsChangeFunc(void (*leds_changed)(uint_fast8_t leds))
 
 void FDC_UpdateLEDs(void)
 {
+}
+
+/* ---- Save states ---- */
+
+/* No command is going, so nothing points into a disc */
+int fdc_idle(void)
+{
+	return c711_on ? c711_idle() : !F.busy;
+}
+
+/* A drive's head, and the disc in it by its image and what has been written to it since the image
+   was made. Reading one back puts that disc in again with just those writes, and they replace
+   <image>.sav when it is next written: a disc with none has its .sav taken away now. */
+static void drive_snap(snap_t *s, drive_t *d)
+{
+	char path[1024] = "";
+	uint32_t has = d->disc != NULL, len = 0;
+	uint8_t *changes = NULL;
+	size_t n = 0;
+	disc_t *disc;
+
+	SNAP(s, has);
+	SNAP(s, d->cyl);
+	SNAP(s, d->wp);
+	SNAP(s, d->changed);
+	if (s->saving && has)
+	{
+		snprintf(path, sizeof path, "%s", d->disc->path);
+		changes = disc_changes(d->disc, &n);
+		len = (uint32_t)n;
+	}
+	if (has)
+	{
+		snap_bytes(s, path, sizeof path);
+		SNAP(s, len);
+		if (!s->saving && len > 64 << 20)
+			s->bad = 1;
+		if (!s->saving && !s->bad)
+			changes = malloc(len ? len : 1);
+		if (changes)
+			snap_bytes(s, changes, len);
+	}
+	if (!s->saving && !s->bad)
+	{
+		disc = NULL;
+		path[sizeof path - 1] = 0;
+		if (has && !(disc = disc_open_plain(path)))
+			s->bad = 1;
+		else
+		{
+			disc_free(d->disc);
+			d->disc = disc;
+			if (disc && len)
+				disc_apply(disc, changes, len);
+			else if (disc && !d->wp)
+			{
+				char sav[1100];
+
+				snprintf(sav, sizeof sav, "%s.sav", path);
+				remove(sav);
+			}
+		}
+	}
+	free(changes);
+}
+
+/* The 1772's registers and lines, and the drives, taken with no command going. The buffer it
+   reads and writes a track in is its own and stays. */
+void fdc_snap(snap_t *s)
+{
+	uint8_t *buf = F.buf;
+	int buflen = F.buflen, i;
+
+	SNAP(s, F);
+	if (!s->saving)
+	{
+		F.buf = buf;
+		F.buflen = buflen;
+		F.side = NULL;
+	}
+	for (i = 0; i < 4; i++)
+		drive_snap(s, &floppy[i]);
 }

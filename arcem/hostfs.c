@@ -91,6 +91,7 @@ int __riscosify_control = 0;
 #include "arch/filecalls.h"
 #include "arch/ControlPane.h"
 #include "c99.h"
+#include "snap.h"
 
 #define HOSTFS_ROOT CONFIG.sHostFSDirectory
 
@@ -198,6 +199,8 @@ typedef struct {
 static const char *const disc_name_default = "HostFS";
 
 static FILE *open_file[MAX_OPEN_FILES + 1]; /* array subscript 0 is never used */
+static char *open_name[MAX_OPEN_FILES + 1];   /* each open file's host path, for a save state */
+static bool open_update[MAX_OPEN_FILES + 1];  /* and whether it was opened for update */
 
 static uint8_t *buffer = NULL;
 static size_t buffer_size = 0;
@@ -1083,6 +1086,10 @@ hostfs_open(ARMul_State *state)
     return;
   }
 
+  free(open_name[idx]);
+  open_name[idx] = strdup(host_pathname);
+  open_update[idx] = state->Reg[0] == OPEN_MODE_UPDATE;
+
   /* Find the extent of the file */
   fseeko64(open_file[idx], 0, SEEK_END);
   state->Reg[3] = (ARMword) ftello64(open_file[idx]);
@@ -1281,6 +1288,8 @@ hostfs_close(ARMul_State *state)
 
   /* Free up the open_file[] entry */
   open_file[state->Reg[1]] = NULL;
+  free(open_name[state->Reg[1]]);
+  open_name[state->Reg[1]] = NULL;
 
   /* If load and exec addresses are both 0, then nothing to do */
   if (load == 0 && exec == 0) {
@@ -2458,3 +2467,64 @@ hostfs(ARMul_State *state)
 }
 
 #endif
+
+/**
+ * For a save state: whether HostFS has registered, and the files it has open, each by its
+ * handle, its host path, how it was opened and where it has got to. Reading one back closes the
+ * files open now and opens those again; a file that can't be opened makes the state bad. What
+ * the files hold isn't part of the state.
+ */
+void
+hostfs_snap(snap_t *s)
+{
+  uint32_t n = 0, i, k;
+
+  SNAP(s, hostfs_state);
+  for (i = 1; s->saving && i < MAX_OPEN_FILES + 1; i++)
+    n += open_file[i] && open_name[i];
+  SNAP(s, n);
+  if (!s->saving) {
+    for (i = 1; i < MAX_OPEN_FILES + 1; i++) {
+      if (open_file[i])
+        fclose(open_file[i]);
+      open_file[i] = NULL;
+    }
+  }
+  for (i = 1, k = 0; k < n && !s->bad; k++) {
+    uint32_t idx, len;
+    uint8_t update;
+    int64_t pos;
+    char name[PATH_MAX];
+
+    if (s->saving) {
+      while (!open_file[i] || !open_name[i])
+        i++;
+      idx = i++;
+      update = open_update[idx];
+      pos = (int64_t) ftello64(open_file[idx]);
+      len = (uint32_t) strlen(open_name[idx]);
+    }
+    SNAP(s, idx);
+    SNAP(s, update);
+    SNAP(s, pos);
+    SNAP(s, len);
+    if (idx < 1 || idx > MAX_OPEN_FILES || len >= sizeof(name)) {
+      s->bad = 1;
+      break;
+    }
+    if (s->saving) {
+      snap_bytes(s, open_name[idx], len);
+      continue;
+    }
+    snap_bytes(s, name, len);
+    name[len] = 0;
+    open_file[idx] = fopen64(name, update ? "rb+" : "rb");
+    if (!open_file[idx] || fseeko64(open_file[idx], (off64_t) pos, SEEK_SET)) {
+      s->bad = 1;
+      break;
+    }
+    free(open_name[idx]);
+    open_name[idx] = strdup(name);
+    open_update[idx] = update;
+  }
+}

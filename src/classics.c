@@ -1025,6 +1025,7 @@ int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 	snprintf(g.boot, sizeof g.boot, "%s", c->boot);
 	g.classic = 1;
 	g.scale = 2;
+	g.autosave = 1;
 	g.desktop = desktop;
 	g.menu = menu;
 	store_save(&g);

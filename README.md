@@ -18,7 +18,7 @@ I wanted to add the RISC OS version of Lemmings to that list, along with the oth
 
 PiArcBoot solves these problems - it is a super easy to use emulator built around running these games, starting the game directly with no setup or technical knowledge required. Even the ROM issue was solved with [ROO311](https://github.com/jameshansen/ROO311), a free ROM made from the RISC OS Open sources.
 
-PiArcBoot lists most of the JASPP games which can be quickly installed and played. along with JASPP, the Classics tab has a collection of well-known freeware games, like Asylum and Oddball, along with the desktop games from PackMan, RISC OS Open's package manager. Disc images and zip files of your own can be loaded in the My Games tab.
+PiArcBoot lists most of the JASPP games which can be quickly installed and played. Along with JASPP, the Classics tab has a collection of well-known freeware games, like Asylum and Oddball, along with the desktop games from PackMan, RISC OS Open's package manager. Disc images and zip files of your own can be loaded in the My Games tab.
 
 The emulation core is based on [ArcEm](https://github.com/ArcEm-emu/ArcEm), with a number of enhancements, such as 1.6MB floppy support and save state support.
 
@@ -26,12 +26,12 @@ This is a passion project, making some of these old favourites easy to pick up a
 
 ## Games
 
-PiArcBoot lists 113 JASPP games and 23 Classics, among them:
+PiArcBoot lists 113 JASPP games and 23 Classics, including:
 
 - **JASPP**: Lemmings, Lemmings 2: The Tribes, Gods, Magic Pockets, Cannon Fodder, SpeedBall 2, Sensible Soccer, Chocks Away, Lotus Turbo Challenge 2, Populous, SimCity, James Pond, Fire & Ice, Chuck Rock and Pac-mania
 - **Classics**: Elite, Star Fighter 3000, Hamsters, Asylum and Cycloids
 
-[GAMES.md](GAMES.md) lists every one, with its year, publisher and how it installs.
+The full list is in [GAMES.md](GAMES.md), with every game's year, publisher and how it installs.
 
 The JASPP tab is JASPP's own package feed, cut down to the games that start the same way on ROO311 as on RISC OS 3.11. Most take over the screen, and the few that play in the RISC OS desktop, such as SimCity and Mah-Jong Patience, are shown cropped to their windows. A game JASPP adds later appears by itself once its floppy images are there, marked as untested.
 
@@ -44,12 +44,14 @@ PiArcBoot is an unofficial project and isn't affiliated with JASPP or with RISC 
 - **Straight into the game.** The keys that start a game are pressed for it behind a splash screen, and the picture appears when the game puts up its first screen.
 - **Every game is its own program**, with its own window, taskbar icon and shortcuts.
 - **Any window size, and full screen**, with the picture kept sharp at every size.
-- **Disc switching** from the Switch Floppy menu or with Alt and a number, and auto switch points, which change the disc by themselves when a game shows the screen that asks for it.
+- **Save states.** Every game gets 3 save slots, each one holding the whole machine as it was at that moment along with a screenshot of it. One slot is saved every 30 seconds of play without the game pausing, and a game with saves opens on all 3 side by side, so you can continue one or start a new game in an empty slot.
+- **Search** across the game lists, and each tab shows how many of its games match.
+- **Disc switching** from the Switch Floppy menu or with Ctrl, Alt and a number, and auto switch points, which change the disc by themselves when a game shows the screen that asks for it.
 - **Your own disc images.** Add Game on the My Games tab turns JFD, ADF, ADL and HFE images, the usual Archimedes disc image formats, or a zip of them, into games, with the discs put in order from their names.
 - **Your own archives.** A zip, Spark or ArcFS archive of RISC OS applications becomes a game too: its files go on floppy images, or in a folder the machine reads directly when they're too big for floppies or need the support pack, and it starts from the application named after the archive, or its biggest.
 - **Hard disc installs.** The games that came with a hard disc installer, such as Black Angel, Carnage Inc and Raw Power, have the files it would copy taken straight off their disc images as they install, or as their discs are added with Add Game, so they start from a folder the machine reads directly with no discs to swap. A copy of those files is kept, and the game starts from a fresh copy if its folder is ever removed.
 - **Saves are kept** in a file beside each disc image, and the image itself is never changed. Any disc can be made read only.
-- **Windows only** for a game that plays in the RISC OS desktop: the picture is cropped to the game's windows, leaving out the icon bar and the desktop around them, and it follows them as they open, close and move. The desktop is 640 by 512 in 256 colours, as the Classics' is, and a small window of the game's is never blown up past the window's scale. The Game menu turns it on or off for any game, your own included, and the games that need it start with it on.
+- **Crop to Window** for a game that plays in the RISC OS desktop: the picture is cropped to the game's windows, leaving out the icon bar and the desktop around them, and it follows them as they open, close and move. The desktop is 640 by 512 in 256 colours, as the Classics' is, and a small window of the game's is never blown up past the window's scale. The Game menu turns it on or off for any game, your own included, and the games that need it start with it on.
 - **Copy protection as the disc has it**, so the games' own disc checks pass.
 
 ![Lemmings' first level in a window of its own, under its Game and Switch Floppy menus](docs/game.png)
@@ -105,22 +107,30 @@ Click on the picture to give the mouse to the game. The left button is Select, t
 
 | Key | Action |
 | --- | --- |
-| Alt+Enter | Enter or leave full screen |
-| Alt+1 to Alt+9 | Put that disc in the drive |
+| Ctrl+Alt+Enter | Enter or leave full screen |
+| Ctrl+Alt+1 to Ctrl+Alt+9 | Put that disc in the drive |
 | Escape | Take the mouse back from the game |
-| Alt+F4 | Quit |
+| Alt+F4 | Quit, once the game no longer has the mouse |
 
-Escape never reaches the game. A game that wants it gets it from **Send ESC** at the bottom of the Game menu, in the window's menu bar.
+PiArcBoot's own shortcuts all use Ctrl+Alt, so Alt and every other key belong to the game. While the game has the mouse it has the keyboard too, including system keys like Alt+F4 and Alt+Tab, and Escape gives you both back.
 
-In full screen there is no menu bar, and Alt+Enter comes back to the window.
+Escape never reaches the game. A game that wants it gets it from **Send ESC** at the top of the Game menu, in the window's menu bar.
+
+**Save Snapshot** in the Game menu saves what's on screen as a PNG in your Pictures folder, named after the game and the time it was taken.
+
+In full screen there is no menu bar, and Ctrl+Alt+Enter comes back to the window.
 
 Drag the window's edge or maximize it and the picture grows to fill the frame, keeping its shape. A size from the Game menu puts the window back to an exact multiple.
 
-**Windows Only** in the Game menu shows just the game's windows, for a game that plays in the RISC OS desktop, and the pointer then goes where yours is over the picture. PiArcBoot remembers the choice for each game.
+**Crop to Window** in the Game menu shows just the game's windows, for a game that plays in the RISC OS desktop, and the pointer then goes where yours is over the picture. PiArcBoot remembers the choice for each game.
+
+The **Saves** menu has 3 slots, and each one has **Save**, which keeps the whole machine as it is right now, **Restore**, which puts it back the way that slot has it, and **Selected for Auto Save**, which is ticked for the slot that gets written every 30 seconds of play. Restoring a slot also makes it the one Auto Save writes to. A slot holding a save from an earlier session won't be written over until you restore it, save to it or choose a slot. Restoring rolls back anything the game wrote to a floppy as well, but files in a game's own folder stay as they are.
+
+When a game has saves, it starts on the selector, which shows the 3 slots side by side with their screenshots and when each one was saved. **Continue** restores a slot, **New Game** starts the game fresh in an empty one and **Erase** deletes a save after asking first, and whichever slot you pick becomes the one Auto Save writes to. **Open Selector** in the Saves menu brings it up during a game, which waits behind it until you close it and carry on where you were.
 
 To set an auto switch point, wait for the game to ask for a disc, choose **Set Auto Switch Point** from the Switch Floppy menu and then choose the disc. **Clear Auto Switch Points** forgets them all.
 
-Games are kept in `~/.local/share/piarcboot/games`, a folder each, with their disc images, saved changes (`.sav`), icon and settings.
+Games are kept in `~/.local/share/piarcboot/games`, a folder each, with their disc images, saved changes (`.sav`), save states (`saves/`), icon and settings.
 
 ![The Settings for Gods, with its two discs and the second one set to read only](docs/settings.png)
 
@@ -130,13 +140,13 @@ The machine is [ArcEm](https://github.com/ArcEm-emu/ArcEm)'s, set up as an Archi
 
 The machine runs 25 million cycles to a second of its own time, a fixed rate rather than one measured against the host, so a game takes the same machine time on every computer and a test script gives the same result every time. The game window keeps it to real time a centisecond at a time.
 
-A game boots behind the splash screen with the machine running flat out. A disc that boots gets Shift held until it is first read. For any other disc, ROO311's HostLink module runs the application once the desktop is up, the way a double-click would. HostLink then reports a screen mode change when the game takes the screen, an error box when it asks for a disc, or a new desktop task, whose icon bar icon it clicks for a game that waits to be clicked. The splash stays up until one of those, so the desktop isn't seen on the way. HostLink also reports where the windows on the screen are, five times a second when they change, as it walks up the Wimp's window stack from the icon bar, and for a game shown Windows Only the picture is cropped to the area they cover. A game that plays in the desktop has its icon clicked once its floppy drive has been still for a second.
+A game boots behind the splash screen with the machine running flat out. A disc that boots gets Shift held until it is first read. For any other disc, ROO311's HostLink module runs the application once the desktop is up, the way a double-click would. HostLink then reports a screen mode change when the game takes the screen, an error box when it asks for a disc, or a new desktop task, whose icon bar icon it clicks for a game that waits to be clicked. The splash stays up until one of those, so the desktop isn't seen on the way. HostLink also reports where the windows on the screen are, five times a second when they change, as it walks up the Wimp's window stack from the icon bar, and with Crop to Window on, the picture is cropped to the area they cover. A game that plays in the desktop has its icon clicked once its floppy drive has been still for a second.
 
 The floppy controller is a WD1772 written from its data sheet, with the disc turning under it at 300 rpm and each sector passing the head at its place on the track. A JFD image records each sector's place, size, number and CRC errors, which is how JASPP keeps a disc's copy protection, so the games' checks find what they would on the real disc. Botkiller 2 and the Risc PC version of Speedball 2 come on 1.6MB discs, so for those two the machine becomes an A5000, a later Archimedes, with its 82C711, whose 765 floppy controller is also written from its data sheet.
 
 Disc images are never written to. What a game writes goes to `<image>.sav` beside the image and is laid back over it when the game next starts.
 
-A Classics game comes as a zip of RISC OS applications, which Install lays out as ADFS D format floppy images, and it starts on a 640 by 512 desktop in 256 colours for the games that play in it. HostLink can start applications, click icon bar icons and move the pointer, and it reports screen mode changes, error boxes and new desktop tasks, and nothing more. The zips are mirrored in `distributable-games`, each with where it came from and the terms it is distributed under. Star Fighter 3000 comes from its own site.
+A Classics game comes as a zip of RISC OS applications, which Install lays out as ADFS D format floppy images, and it starts on a 640 by 512 desktop in 256 colours for the games that play in it. HostLink can start applications, click icon bar icons and move the pointer, and it reports screen mode changes, with how many OS units make a pixel in the new mode, error boxes and new desktop tasks, and nothing more. The pointer moves as far across the picture as your mouse does in any mode, as the OS units to a pixel say. The zips are mirrored in `distributable-games`, each with where it came from and the terms it is distributed under. Star Fighter 3000 comes from its own site.
 
 An archive added with Add Game is laid out the same way. Spark and ArcFS archives, RISC OS's own formats, are read by `src/arc.c`: stored, packed (runs of a byte), crunched and compressed (LZW, as Unix compress wrote it) and squashed files, each checked against its CRC. The folder an archive's applications are in becomes the top of the disc, so a PackMan package's `Apps.Games.!Foo` comes out as `!Foo`, and an application whose `!Run` asks for the Toolbox, `System:`, a scrap folder or `Choices:` gets the support pack.
 

@@ -12,6 +12,7 @@ extern char arcemDir[256];
 
 #include "armarc.h"
 #include "i2c.h"
+#include "../snap.h"
 
 #include "ArcemConfig.h"
 #include "dbugsys.h"
@@ -517,3 +518,9 @@ I2C_Init(ARMul_State *state)
 
   return SetUpCMOS(state);
 } /* I2C_Init */
+
+/* For a save state: the CMOS RAM and where the chip is in a transfer */
+void I2C_Snap(snap_t *s)
+{
+  SNAP(s, I2C);
+}

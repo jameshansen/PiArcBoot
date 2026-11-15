@@ -16,6 +16,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <commdlg.h>
+#include <shlobj.h>
 #else
 #include <sys/wait.h>
 #endif
@@ -115,6 +116,7 @@ int store_load(const char *id, game_t *g)
 	snprintf(g->id, sizeof g->id, "%s", id);
 	g->scale = 2;
 	g->crop = -1;
+	g->autosave = 1;
 	for (line = text; line && *line; line = next)
 	{
 		char *eq, *v;
@@ -135,6 +137,7 @@ int store_load(const char *id, game_t *g)
 		else if (!strcmp(line, "sprite")) snprintf(g->sprite, sizeof g->sprite, "%s", v);
 		else if (!strcmp(line, "preset")) snprintf(g->preset, sizeof g->preset, "%s", v);
 		else if (!strcmp(line, "crop")) g->crop = atoi(v);
+		else if (!strcmp(line, "autosave")) g->autosave = atoi(v) >= 0 && atoi(v) <= 3 ? atoi(v) : 1;
 		else if (!strcmp(line, "fdc")) g->fdc = atoi(v);
 		else if (!strcmp(line, "wp")) all_ro = atoi(v);         /* every disc write protected, as the JASPP table has some */
 		else if (!strcmp(line, "readonly") && n_ro < MAX_DISCS) snprintf(ro[n_ro++], sizeof ro[0], "%s", v);
@@ -185,6 +188,8 @@ int store_save(const game_t *g)
 		fprintf(f, "preset=%s\n", g->preset);
 	if (g->crop >= 0)
 		fprintf(f, "crop=%d\n", g->crop);
+	if (g->autosave != 1)
+		fprintf(f, "autosave=%d\n", g->autosave);
 	for (i = 0; i < g->ndiscs; i++)
 		fprintf(f, "disc=%s\n", g->disc[i]);
 	for (i = 0; i < g->ndiscs; i++)
@@ -317,6 +322,41 @@ static void shortcut_dirs(char *apps, size_t apps_size, char *desk, size_t desk_
 	free(dir);
 }
 #endif
+
+/* Where Save Snapshot puts its pictures: the user's Pictures folder, or with PIARCBOOT_HOME set,
+   which the tests do, a folder inside that */
+void store_pictures_dir(char *buf, size_t size)
+{
+	const char *test = getenv("PIARCBOOT_HOME");
+#ifdef _WIN32
+	char dir[MAX_PATH];
+#else
+	const char *home = getenv("HOME") ? getenv("HOME") : ".";
+	char *dir;
+#endif
+
+	if (test)
+		snprintf(buf, size, "%s/snapshots", test);
+	else
+	{
+#ifdef _WIN32
+		if (SHGetFolderPathA(NULL, CSIDL_MYPICTURES, NULL, 0, dir) == S_OK)  /* wherever the Pictures folder has been moved to */
+			snprintf(buf, size, "%s", dir);
+		else
+			snprintf(buf, size, "%s\\Pictures", getenv("USERPROFILE") ? getenv("USERPROFILE") : ".");
+#else
+		dir = run_output("xdg-user-dir PICTURES 2>/dev/null");
+		if (dir)
+			dir[strcspn(dir, "\r\n")] = 0;
+		if (dir && dir[0] == '/')
+			snprintf(buf, size, "%s", dir);
+		else
+			snprintf(buf, size, "%s/Pictures", home);
+		free(dir);
+#endif
+	}
+	make_dirs(buf);
+}
 
 /* Makes a game's shortcuts match its settings: one on the desktop, one in the menu */
 void store_shortcuts(const game_t *g)
@@ -1065,6 +1105,7 @@ int install_jaspp(const entry_t *e, int desktop, int menu, progress_t *p)
 	snprintf(g.version, sizeof g.version, "%s", e->version);
 	g.jaspp = 1;
 	g.scale = 2;
+	g.autosave = 1;
 	g.desktop = desktop;
 	g.menu = menu;
 	if (e->tested)
@@ -1270,6 +1311,7 @@ static void new_game(game_t *g, const char *file)
 		snprintf(g->id + k, sizeof g->id - k, "-%d", i);
 	}
 	g->scale = 2;
+	g->autosave = 1;
 }
 
 /* ---- Archives of applications ----

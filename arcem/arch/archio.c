@@ -24,11 +24,11 @@
 struct IOCStruct ioc;
 bool (*IO_Hook)(ARMul_State *state, ARMword address, ARMword *data, bool write) = NULL;
 
-static void UpdateTimerRegisters_Event(ARMul_State *state,CycleCount time);
+void UpdateTimerRegisters_Event(ARMul_State *state,CycleCount time);  /* not static: a save state names it */
 
 /*-----------------------------------------------------------------------------*/
 
-static void FDCHDC_Poll(ARMul_State *state,CycleCount nowtime)
+void FDCHDC_Poll(ARMul_State *state,CycleCount nowtime)
 {
   EventQ_RescheduleHead(state,nowtime+250,FDCHDC_Poll); /* TODO - This probably needs to be made realtime */
   FDC_Regular(state);

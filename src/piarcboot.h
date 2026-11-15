@@ -24,12 +24,23 @@ extern const char *emu_hostfs_dir;     /* the folder HostFS shows the machine */
 int emu_start(const char *rom, const uint8_t *cmos, int fdc);
 void emu_step(void);
 void emu_audio_open(void);
+void emu_audio_fade_in(int ms);                 /* the sound from here rises from nothing to full over that long */
 void emu_mouse(int dx, int dy, int buttons);
 void emu_script(const char *text);
 void emu_script_line(const char *line);
 int emu_script_busy(void);
+void emu_script_stop(void);
 void emu_save_shot(const char *fn);
 void emu_state(char *buf, size_t size);         /* a line that tells the end of two runs apart */
+
+/* savestate.c: the whole machine kept in a file, and put back from one */
+int state_ready(void);                          /* it can be taken or put back now: no floppy command is going */
+int state_save(const char *path, int wait, const uint32_t *shot, int sw, int sh);       /* with a screenshot, written on a thread of its own unless wait is set; -1 if it can't be now */
+uint32_t *state_shot(const char *path, int *w, int *h); /* a state's screenshot, &00RRGGBB pixels, or NULL */
+uint8_t *state_take(size_t *len);                       /* the machine now, held in memory; NULL if it can't be now */
+int state_put(const uint8_t *parts, size_t len);        /* and back to it: -1, and the machine as it was, if it can't be */
+int state_writing(void);                        /* a state is still being written */
+int state_load(const char *path, char *why, size_t size);       /* -1, the machine as it was and why in why, if it can't be */
 
 /* ROO311's HostLink module, which works the desktop for the game window */
 extern int emu_hostlink;        /* it has made itself known */
@@ -40,6 +51,8 @@ extern int emu_host_modes_at_run, emu_host_errors_at_run, emu_host_tasks_at_run;
 extern int emu_host_vidc_at_run;        /* and machine_mode_sets then */
 extern int emu_host_clicked, emu_host_missed;  /* icon bar clicks made, and asked for with no such icon */
 extern int emu_host_nwins, emu_host_wins[31][4];        /* the windows on the screen as it last said: x0, y0, x1, y1 in OS units */
+extern int emu_host_xeig, emu_host_yeig;        /* the screen mode's eigen factors, as it last said, or -1 */
+void machine_os_per_pixel(int *x2, int *y2);    /* half OS units to a pixel of the picture, across and down */
 void emu_host_run(const char *command);        /* start a *command as a task in the desktop */
 void emu_host_click(const char *sprite);       /* click the icon bar icon with that sprite on it */
 void emu_host_forget(void);                     /* drop what hasn't been sent yet */
@@ -49,6 +62,7 @@ extern int machine_fixed_time;  /* set before power on: the clock starts at noon
 extern int machine_disc_reads;  /* sector reads the floppy controller has been asked for */
 extern int machine_mode_sets;   /* writes to the VIDC's horizontal cycle register, as setting up a screen mode makes */
 int machine_disc(int drive, const char *path, int write_protect);
+const char *machine_disc_path(int drive);      /* the image in that drive, or NULL */
 void machine_cmos_desktop(uint8_t *cmos, int mode, int monitor);     /* a desktop mode and monitor type in place of Auto */
 int machine_motor_on(void);     /* the floppy drive's motor is turning */
 void machine_close(void);       /* writes back what games saved to their discs */
@@ -142,6 +156,7 @@ typedef struct
 	int scale;              /* window size, 1 to 3 */
 	int fullscreen;
 	int crop;               /* 1 shows just the windows on the screen, 0 all of it, -1 as its presets say */
+	int autosave;           /* the save slot written every 30 seconds of play, 1 to 3, or 0 for none */
 	int nocapture;          /* the mouse isn't captured: the pointer goes where the host's is */	int desktop, menu;      /* has a desktop shortcut, a menu entry */
 	int ndiscs;
 	char disc[MAX_DISCS][40];       /* the disc image files in its folder */
@@ -179,6 +194,7 @@ int store_save(const game_t *g);
 int store_list(game_t **out);
 void store_remove(const game_t *g);
 void store_shortcuts(const game_t *g);
+void store_pictures_dir(char *buf, size_t size);       /* the folder Save Snapshot saves in */
 void store_icon(const game_t *g, uint8_t *out);
 int store_sprites(const game_t *g, sprite_t **out);
 int store_set_icon(const game_t *g, const sprite_t *s);
@@ -238,6 +254,8 @@ typedef struct
 	int cmd;                /* what choosing it comes back as */
 	int checked;            /* ticked */
 	int rule;               /* a line above it */
+	int shaded;             /* greyed out, and choosing it does nothing */
+	int sub;                /* in the submenu of the item at this place in the list, counting from 1, or 0 */
 	char label[64];
 } menu_item_t;
 

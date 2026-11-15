@@ -59,6 +59,9 @@ disc_t *disc_open(const char *path);                    /* a JFD, HFE or flat im
 disc_t *disc_parse(const uint8_t *d, size_t len);       /* the same from memory, with no saved changes */
 void disc_free(disc_t *d);
 int disc_save(disc_t *d);                               /* writes <path>.sav if anything has changed; 0 when done */
+disc_t *disc_open_plain(const char *path);              /* the image alone, without its saved changes */
+uint8_t *disc_changes(const disc_t *d, size_t *len);    /* what <path>.sav would hold; NULL if nothing has changed */
+void disc_apply(disc_t *d, const uint8_t *sav, size_t len);     /* puts those changes over the disc */
 void disc_set_side(disc_t *d, int cyl, int head, dsector_t *s, int n, int bytes);       /* a side made afresh, as a format does */
 void disc_layout(dside_t *side);                        /* gives the sectors with no place on the track one, and puts them in track order */
 uint16_t disc_crc(uint16_t crc, const uint8_t *p, size_t n);   /* the CRC the 1772 checks, CCITT, from &FFFF */

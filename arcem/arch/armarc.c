@@ -12,6 +12,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #if defined(__riscos__) && defined(__TARGET_UNIXLIB__)
 #include <unixlib/local.h>
 #endif
@@ -32,6 +33,7 @@
 #include "displaydev.h"
 #include "filecalls.h"
 #include "ControlPane.h"
+#include "../snap.h"
 
 
 #ifdef SYSTEM_macosx
@@ -1037,4 +1039,46 @@ void ARMul_RebuildFastMap(ARMul_State *state)
     FastMap_SetEntries_Repeat(state,MEMORY_0x3800000_R_ROM_HIGH,MEMC.ROMHigh,FastMap_MEMCFunc,FASTMAP_R_USR|FASTMAP_R_SVC|FASTMAP_R_OS|FASTMAP_W_SVC|FASTMAP_W_FUNC,MEMC.ROMHighSize,0x800000);
   else
     FastMap_SetEntries(state,MEMORY_0x3800000_R_ROM_HIGH,0,FastMap_MEMCFunc,FASTMAP_R_USR|FASTMAP_R_SVC|FASTMAP_R_OS|FASTMAP_W_SVC|FASTMAP_W_FUNC|FASTMAP_R_FUNC,0x800000);
+}
+
+/* For a save state: the memory controller's registers and page table, and the RAM. Reading one
+   back maps the memory afresh and forgets the instructions decoded from what was there, and every
+   block of the screen's memory reads as written to, so the picture is drawn again. */
+void MEMC_Snap(ARMul_State *state, snap_t *s)
+{
+  ARMword ram = MEMC.RAMSize, rom = MEMC.ROMHighSize, low = MEMC.ROMLowSize;
+  unsigned i;
+
+  SNAP(s, ram);
+  SNAP(s, rom);
+  SNAP(s, low);
+  if (ram != MEMC.RAMSize || rom != MEMC.ROMHighSize || low != MEMC.ROMLowSize)
+  {
+    s->bad = 1;
+    return;
+  }
+  SNAP(s, MEMC.ControlReg);
+  SNAP(s, MEMC.Vinit);
+  SNAP(s, MEMC.Vstart);
+  SNAP(s, MEMC.Vend);
+  SNAP(s, MEMC.Cinit);
+  SNAP(s, MEMC.Sstart);
+  SNAP(s, MEMC.SendN);
+  SNAP(s, MEMC.Sptr);
+  SNAP(s, MEMC.SendC);
+  SNAP(s, MEMC.SstartC);
+  SNAP(s, MEMC.NextSoundBufferValid);
+  SNAP(s, MEMC.ROMMapFlag);
+  SNAP(s, MEMC.PageSizeFlags);
+  SNAP(s, MEMC.PageTable);
+  snap_bytes(s, MEMC.PhysRam, MEMC.RAMSize);
+  SNAP(s, DisplayDev_UseUpdateFlags);
+  SNAP(s, DisplayDev_FrameSkip);
+  if (s->saving || s->bad)
+    return;
+  memset(MEMC.EmuFuncChunk, 0, (MAX(MEMC.RAMSize, 512 * 1024) + MEMC.ROMHighSize + MEMC.ROMLowSize + 256) * (sizeof(FastMapUInt) / 4));
+  for (i = 0; i < 512 * 1024 / UPDATEBLOCKSIZE; i++)
+    MEMC.UpdateFlags[i]++;
+  ARMul_RebuildFastMap(state);
+  FastMap_RebuildMapMode(state);
 }

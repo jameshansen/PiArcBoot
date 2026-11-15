@@ -31,16 +31,18 @@
 #include "../arcem/arch/dbugsys.h"
 #include "piarcboot.h"
 #include "core.h"
+#include "../arcem/snap.h"
+#include "disc.h"
 
 void ARMul_Emulate26(ARMul_State *state);       /* armemu.c */
 
 #define RATE 48000                      /* the sound's rate, in frames a second */
 #define QUEUE_MAX (RATE * 4 / 5)        /* 200 ms of 16 bit stereo, in bytes */
-/* Mouse counts for pixels of the picture. With the CMOS RAM games start from, RISC OS moves the
-   pointer 3 OS units a count, and a pixel of the picture is 2 OS units in the usual modes, so
-   2 counts go for every 3 pixels. */
-#define MOUSE_COUNTS 2
-#define MOUSE_PIXELS 3
+/* With the CMOS RAM games start from, RISC OS moves the pointer 3 OS units for each count from
+   the mouse. The mouse's movement is kept in half OS units, as many as the pixels of the picture
+   it crossed come to in the screen mode (machine_os_per_pixel), so that the pointer goes as far
+   across the picture as the mouse did. */
+#define MOUSE_STEP 3
 
 int emu_mute;
 uint8_t emu_host_keys[512];
@@ -200,7 +202,7 @@ static const struct
 
 static uint8_t script_keys[ARCH_KEY_count], sent_keys[ARCH_KEY_count];
 static int host_buttons, script_buttons;
-static int mouse_dx, mouse_dy;          /* movement still to go, in counts times MOUSE_PIXELS */
+static int mouse_dx, mouse_dy;          /* movement still to go, in half OS units */
 
 /* Tells the machine's keyboard about every key that has gone down or up since the last time,
    from the real keyboard, the mouse buttons and the script together */
@@ -234,28 +236,45 @@ static void mouse_update(void)
 	ARMul_State *state = &statestr;
 	int x = (int8_t)(KBD.MouseXCount << 1) >> 1, y = (int8_t)(KBD.MouseYCount << 1) >> 1, take;
 
-	take = mouse_dx / MOUSE_PIXELS;
+	take = mouse_dx / (2 * MOUSE_STEP);
 	take = take > 63 - x ? 63 - x : take < -63 - x ? -63 - x : take;
 	x += take;
-	mouse_dx -= take * MOUSE_PIXELS;
-	take = -mouse_dy / MOUSE_PIXELS;                  /* up is positive to the machine */
+	mouse_dx -= take * 2 * MOUSE_STEP;
+	take = -mouse_dy / (2 * MOUSE_STEP);            /* up is positive to the machine */
 	take = take > 63 - y ? 63 - y : take < -63 - y ? -63 - y : take;
 	y += take;
-	mouse_dy += take * MOUSE_PIXELS;
+	mouse_dy += take * 2 * MOUSE_STEP;
 	KBD.MouseXCount = (uint8_t)(x & 127);
 	KBD.MouseYCount = (uint8_t)(y & 127);
 }
 
+int emu_host_xeig = -1, emu_host_yeig = -1;
+
+/* How many half OS units a pixel of the picture is across and down: from the screen mode's eigen
+   factors, which ROO311's HostLink gives with each change of mode, and the picture's doubling of a
+   narrow mode's pixels and a short one's lines. 4 each way, the usual modes', until it has. */
+void machine_os_per_pixel(int *x2, int *y2)
+{
+	*x2 = emu_host_xeig >= 0 ? (2 << emu_host_xeig) / screen_xscale() : 4;
+	*y2 = emu_host_yeig >= 0 ? (2 << emu_host_yeig) / (emu_dbl ? 2 : 1) : 4;
+	*x2 = *x2 > 0 ? *x2 : 1;
+	*y2 = *y2 > 0 ? *y2 : 1;
+}
+
 void emu_mouse(int dx, int dy, int buttons)
 {
-	mouse_dx += dx * MOUSE_COUNTS;
-	mouse_dy += dy * MOUSE_COUNTS;
+	int x2, y2;
+
+	machine_os_per_pixel(&x2, &y2);
+	mouse_dx += dx * x2;
+	mouse_dy += dy * y2;
 	host_buttons = buttons;
 }
 
 /* ---- The script ---- */
 
-enum { S_WAIT, S_UNTILREAD, S_UNTILERROR, S_UNTILIDLE, S_KEY, S_MOUSE, S_BUTTON, S_DISC, S_SHOT, S_CMOS, S_RUN, S_CLICK, S_POINTER };
+enum { S_WAIT, S_UNTILREAD, S_UNTILERROR, S_UNTILIDLE, S_KEY, S_MOUSE, S_BUTTON, S_DISC, S_SHOT, S_CMOS, S_RUN, S_CLICK, S_POINTER,
+	S_SAVESTATE, S_LOADSTATE };
 
 typedef struct
 {
@@ -378,6 +397,10 @@ void emu_script_line(const char *line)
 		add(S_RUN, 0, 0, rest);
 	else if (!strcmp(cmd, "click") && n >= 1)       /* HostLink: click the icon bar icon with that sprite */
 		add(S_CLICK, 0, 0, rest);
+	else if (!strcmp(cmd, "savestate") && n >= 1)   /* the machine to a file, once no floppy command is going */
+		add(S_SAVESTATE, 0, 0, rest);
+	else if (!strcmp(cmd, "loadstate") && n >= 1)   /* and back from one */
+		add(S_LOADSTATE, 0, 0, rest);
 	else
 		fprintf(stderr, "piarcboot: a script step that makes no sense: %s\n", line);
 }
@@ -483,6 +506,22 @@ static void script_run(void)
 			emu_host_pointer(s->a, s->b);
 			break;
 
+			case S_SAVESTATE:
+			case S_LOADSTATE:
+			{
+				char why[200];
+
+				if (!state_ready())
+				{
+					pc--;           /* a floppy command is going: the next centisecond */
+					return;
+				}
+				if (s->op == S_SAVESTATE ? state_save(s->s, 1, NULL, 0, 0) : state_load(s->s, why, sizeof why))
+					fprintf(stderr, "piarcboot: can't %s the state %s: %s\n", s->op == S_SAVESTATE ? "save" : "restore", s->s,
+						s->op == S_SAVESTATE ? "it couldn't be written" : why);
+				break;
+			}
+
 			case S_CMOS:
 			{
 				uint8_t now[256];
@@ -551,6 +590,15 @@ SoundFrame *Sound_GetHostBuffer(size_t *destavail)
 static SoundFrame rs_out[sizeof sound_buf / sizeof *sound_buf * 102 / 100], rs_prev;
 static double rs_pos, rs_level = QUEUE_AIM;
 static unsigned sound_dropped, sound_dry;
+static int rise_at, rise_len;           /* frames into the sound rising from nothing to full, and how many that takes */
+
+/* The sound from here starts silent and rises to full over that many milliseconds, so a game
+   doesn't start with a jump in volume */
+void emu_audio_fade_in(int ms)
+{
+	rise_len = RATE / 1000 * ms;
+	rise_at = 0;
+}
 
 static void queue_sound(const SoundFrame *in, size_t frames)
 {
@@ -578,8 +626,10 @@ static void queue_sound(const SoundFrame *in, size_t frames)
 		double f = rs_pos - i;
 		const SoundFrame *a = i < 0 ? &rs_prev : &in[i], *b = &in[i + 1];
 
+		double gain = rise_at < rise_len ? (double)rise_at++ / rise_len : 1;
+
 		for (c = 0; c < 2; c++)
-			rs_out[n].channel[c] = (SoundData)(a->channel[c] + (b->channel[c] - a->channel[c]) * f);
+			rs_out[n].channel[c] = (SoundData)((a->channel[c] + (b->channel[c] - a->channel[c]) * f) * gain);
 		n++;
 	}
 	rs_pos = rs_pos - frames < -1 ? -1 : rs_pos - frames;
@@ -802,8 +852,12 @@ static bool hostlink_swi(ARMul_State *state, unsigned number)
 		}
 
 		case HL_EVENT:
-		if (state->Reg[0] == 1)
+		if (state->Reg[0] == 1)         /* a new mode, with its eigen factors */
+		{
 			emu_host_modes++;
+			emu_host_xeig = state->Reg[2] <= 3 ? (int)state->Reg[2] : -1;
+			emu_host_yeig = state->Reg[3] <= 3 ? (int)state->Reg[3] : -1;
+		}
 		else if (state->Reg[0] == 2)
 			emu_host_clicked++;
 		else if (state->Reg[0] == 3)
@@ -902,6 +956,113 @@ void emu_step(void)
 	}
 }
 
+/* ---- Save states ---- */
+
+void UpdateTimerRegisters_Event(ARMul_State *state, CycleCount nowtime);       /* arch/archio.c */
+void FDCHDC_Poll(ARMul_State *state, CycleCount nowtime);
+void Sound_DMAEvent(ARMul_State *state, CycleCount nowtime);                    /* arch/newsound.c */
+extern const EventQ_Func screen_events[];                                       /* screen.c */
+
+/* The events the machine can have waiting, which a save state names by number: their place in
+   this list, or from 16 the display driver's in the order screen.c gives them */
+static EventQ_Func event_func(int32_t n)
+{
+	const EventQ_Func fixed[] = { step_end, UpdateTimerRegisters_Event, FDCHDC_Poll, Keyboard_Poll, Sound_DMAEvent };
+	int i;
+
+	if (n >= 0 && n < (int32_t)(sizeof fixed / sizeof *fixed))
+		return fixed[n];
+	for (i = 0; n >= 16 && screen_events[i]; i++)
+		if (n == 16 + i)
+			return screen_events[i];
+	return NULL;
+}
+
+static int32_t event_number(EventQ_Func f)
+{
+	int32_t n;
+
+	for (n = 0; n < 32; n++)
+		if (event_func(n) && event_func(n) == f)
+			return n;
+	return -1;
+}
+
+/* The processor and the events waiting for it, the clock, and what this layer has told the
+   machine: the keys it holds down and what HostLink has said. The script and the host's own keys
+   and mouse aren't part of it, and a script carries on from a state read back. */
+void emu_snap(snap_t *s)
+{
+	ARMul_State *state = &statestr;
+	int i;
+
+	SNAP(s, state->Reg);
+	SNAP(s, state->NumCycles);
+	SNAP(s, state->NextInstr);
+	SNAP(s, state->Bank);
+	SNAP(s, state->OSmode);
+	SNAP(s, state->NtransSig);
+	SNAP(s, state->abortSig);
+	SNAP(s, state->Aborted);
+	SNAP(s, state->AbortAddr);
+	SNAP(s, state->Exception);
+	SNAP(s, state->Base);
+	SNAP(s, state->HasSWP);
+	SNAP(s, state->HasCP15);
+	SNAP(s, state->instr);
+	SNAP(s, state->pc);
+	SNAP(s, state->loaded);
+	SNAP(s, state->decoded);
+	SNAP(s, state->RegBank);
+	SNAP(s, state->NumEvents);
+	if (state->NumEvents > EVENTQ_SIZE)
+	{
+		s->bad = 1;
+		return;
+	}
+	for (i = 0; i < state->NumEvents; i++)
+	{
+		int32_t n = s->saving ? event_number(state->EventQ[i].Func) : 0;
+
+		SNAP(s, state->EventQ[i].Time);
+		SNAP(s, n);
+		if (s->saving ? n < 0 : !(state->EventQ[i].Func = event_func(n)))
+			s->bad = 1;
+	}
+	SNAP(s, clock_base);
+	SNAP(s, clock_seen);
+	SNAP(s, sent_keys);
+	SNAP(s, emu_hostlink);
+	SNAP(s, emu_host_modes);
+	SNAP(s, emu_host_clicked);
+	SNAP(s, emu_host_missed);
+	SNAP(s, emu_host_errors);
+	SNAP(s, emu_host_tasks);
+	SNAP(s, emu_host_nwins);
+	SNAP(s, emu_host_wins);
+	SNAP(s, emu_host_xeig);
+	SNAP(s, emu_host_yeig);
+	SNAP(s, hl_px);
+	SNAP(s, hl_py);
+	if (s->saving)
+		return;
+	if (emu_host_nwins < 0 || emu_host_nwins > 31)
+		emu_host_nwins = 0;
+	mouse_dx = mouse_dy = 0;
+	hl_count = 0;
+	hl_moved = hl_px >= 0;
+}
+
+/* Drops the steps still to come, and lets go of the keys and buttons they hold */
+void emu_script_stop(void)
+{
+	while (n_steps > 0)
+		free(steps[--n_steps].s);
+	pc = wait_left = until_active = 0;
+	memset(script_keys, 0, sizeof script_keys);
+	script_buttons = 0;
+}
+
 /* ---- The rest of the machine as src/ sees it ---- */
 
 /* A CMOS RAM with a desktop mode and monitor type of its own in place of Auto, and its checksum
@@ -929,6 +1090,11 @@ int machine_disc(int drive, const char *path, int write_protect)
 int machine_motor_on(void)
 {
 	return fdc_motor();
+}
+
+const char *machine_disc_path(int drive)
+{
+	return drive >= 0 && drive < 4 && floppy[drive].disc ? floppy[drive].disc->path : NULL;
 }
 
 void machine_close(void)

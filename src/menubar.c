@@ -5,10 +5,11 @@
    and it draws through X11, which is also what SDL uses on a Raspberry Pi. Where neither can be
    had, menubar_open returns 0 and the window has no menus, though its keys still work.
 
-   The menus are given as a flat list of items, and a chosen item comes back as its command
-   number from menubar_poll. */
+   The menus are given as a flat list of items, an item in a submenu naming the item that opens
+   it, and a chosen item comes back as its command number from menubar_poll. */
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <SDL.h>
 #include <SDL_syswm.h>
@@ -46,7 +47,7 @@ int menubar_open(const char *const *names, int n)
 
 void menubar_set(const menu_item_t *items, int n)
 {
-	HMENU old = bar, menu[MAX_MENUS];
+	HMENU old = bar, menu[MAX_MENUS], *sub = calloc(n ? n : 1, sizeof *sub);
 	int i;
 
 	bar = CreateMenu();
@@ -55,14 +56,24 @@ void menubar_set(const menu_item_t *items, int n)
 		menu[i] = CreatePopupMenu();
 		AppendMenuA(bar, MF_POPUP, (UINT_PTR)menu[i], titles[i]);
 	}
+	for (i = 0; i < n; i++)         /* the submenus first, so that each is there when its item is made */
+		if (items[i].sub > 0 && items[i].sub <= i && !sub[items[i].sub - 1])
+			sub[items[i].sub - 1] = CreatePopupMenu();
 	for (i = 0; i < n; i++)
 	{
+		HMENU in = items[i].sub > 0 && items[i].sub <= i ? sub[items[i].sub - 1] : menu[items[i].menu];
+		UINT flags = MF_STRING | (items[i].checked ? MF_CHECKED : 0) | (items[i].shaded ? MF_GRAYED : 0);
+
 		if (items[i].menu < 0 || items[i].menu >= n_titles)
 			continue;
 		if (items[i].rule)
-			AppendMenuA(menu[items[i].menu], MF_SEPARATOR, 0, NULL);
-		AppendMenuA(menu[items[i].menu], MF_STRING | (items[i].checked ? MF_CHECKED : 0), items[i].cmd, items[i].label);
+			AppendMenuA(in, MF_SEPARATOR, 0, NULL);
+		if (sub[i])
+			AppendMenuA(in, flags | MF_POPUP, (UINT_PTR)sub[i], items[i].label);
+		else
+			AppendMenuA(in, flags, items[i].cmd, items[i].label);
 	}
+	free(sub);
 	if (shown)
 	{
 		SetMenu(hwnd, bar);
@@ -139,6 +150,9 @@ static struct
 	unsigned long (*signal_connect)(obj, const char *, void (*)(void), void *, void *, int);
 	int (*events_pending)(void);
 	int (*main_iteration_do)(int);
+	void (*menu_item_set_label)(obj, const char *);
+	void (*widget_set_sensitive)(obj, int);
+	int (*check_menu_item_get_active)(obj);
 } gtk;
 
 static const char *const gtk_names[] =
@@ -149,10 +163,14 @@ static const char *const gtk_names[] =
 	"gtk_widget_show_all", "gtk_widget_show", "gtk_widget_hide", "gtk_widget_destroy", "gtk_widget_realize",
 	"gtk_widget_get_preferred_height", "gtk_widget_get_scale_factor", "gtk_widget_get_window", "gtk_widget_get_display",
 	"gtk_window_resize", "gdk_x11_window_foreign_new_for_display", "gdk_window_reparent", "g_signal_connect_data",
-	"gtk_events_pending", "gtk_main_iteration_do"
+	"gtk_events_pending", "gtk_main_iteration_do", "gtk_menu_item_set_label", "gtk_widget_set_sensitive",
+	"gtk_check_menu_item_get_active"
 };
 
 static obj strip, bar;          /* a borderless GTK window set into the top of the game's, and the menu bar in it */
+static obj *made;               /* each item's widget, as last made */
+static menu_item_t *shown_items;        /* and what they were made from */
+static int n_made;
 static int factor = 1, height, width, building;
 
 static void on_choose(obj item, void *cmd)
@@ -160,6 +178,14 @@ static void on_choose(obj item, void *cmd)
 	(void)item;
 	if (!building)          /* ticking an item as it is made counts as choosing it, to GTK */
 		chosen = (int)(intptr_t)cmd;
+}
+
+/* GTK activates an item as its submenu opens, which unticks a ticked one: it is ticked again */
+static void keep_ticked(obj item, void *unused)
+{
+	(void)unused;
+	if (!gtk.check_menu_item_get_active(item))
+		gtk.check_menu_item_set_active(item, 1);
 }
 
 int menubar_open(const char *const *names, int n)
@@ -192,14 +218,38 @@ int menubar_open(const char *const *names, int n)
 	return 1;
 }
 
+/* Whether two items differ in more than their labels */
+static int unlike(const menu_item_t *a, const menu_item_t *b)
+{
+	return a->menu != b->menu || a->cmd != b->cmd || a->checked != b->checked || a->rule != b->rule ||
+	       a->shaded != b->shaded || a->sub != b->sub;
+}
+
 void menubar_set(const menu_item_t *items, int n)
 {
-	obj menu[MAX_MENUS], item;
+	obj menu[MAX_MENUS], item, *sub;
 	int i, least;
 
+	/* Only the words changed: they are changed in place, so that a menu open just now stays open */
+	for (i = 0; bar && n == n_made && i < n && !unlike(&items[i], &shown_items[i]); i++);
+	if (bar && n == n_made && i == n)
+	{
+		for (i = 0; i < n; i++)
+			if (made[i] && strcmp(items[i].label, shown_items[i].label))
+				gtk.menu_item_set_label(made[i], items[i].label);
+		memcpy(shown_items, items, n * sizeof *items);
+		return;
+	}
 	building = 1;
 	if (bar)
 		gtk.widget_destroy(bar);
+	free(made);
+	free(shown_items);
+	made = calloc(n ? n : 1, sizeof *made);
+	sub = calloc(n ? n : 1, sizeof *sub);
+	shown_items = malloc((n ? n : 1) * sizeof *items);
+	memcpy(shown_items, items, n * sizeof *items);
+	n_made = n;
 	bar = gtk.menu_bar_new();
 	for (i = 0; i < n_titles; i++)
 	{
@@ -210,10 +260,24 @@ void menubar_set(const menu_item_t *items, int n)
 	}
 	for (i = 0; i < n; i++)
 	{
+		int p = items[i].sub - 1;       /* the item whose submenu it is in, which comes before it */
+		obj in;
+
 		if (items[i].menu < 0 || items[i].menu >= n_titles)
 			continue;
+		if (p >= 0 && p < i && made[p])
+		{
+			if (!sub[p])
+			{
+				sub[p] = gtk.menu_new();
+				gtk.menu_item_set_submenu(made[p], sub[p]);
+			}
+			in = sub[p];
+		}
+		else
+			in = menu[items[i].menu];
 		if (items[i].rule)
-			gtk.menu_shell_append(menu[items[i].menu], gtk.separator_menu_item_new());
+			gtk.menu_shell_append(in, gtk.separator_menu_item_new());
 		if (items[i].checked)
 		{
 			item = gtk.check_menu_item_new_with_label(items[i].label);
@@ -221,9 +285,16 @@ void menubar_set(const menu_item_t *items, int n)
 		}
 		else
 			item = gtk.menu_item_new_with_label(items[i].label);
-		gtk.signal_connect(item, "activate", (void (*)(void))on_choose, (void *)(intptr_t)items[i].cmd, NULL, 0);
-		gtk.menu_shell_append(menu[items[i].menu], item);
+		if (items[i].cmd)
+			gtk.signal_connect(item, "activate", (void (*)(void))on_choose, (void *)(intptr_t)items[i].cmd, NULL, 0);
+		else if (items[i].checked)      /* a ticked item that opens a submenu */
+			gtk.signal_connect(item, "toggled", (void (*)(void))keep_ticked, NULL, NULL, 0);
+		if (items[i].shaded)
+			gtk.widget_set_sensitive(item, 0);
+		gtk.menu_shell_append(in, item);
+		made[i] = item;
 	}
+	free(sub);
 	gtk.container_add(strip, bar);
 	gtk.widget_show_all(strip);
 	gtk.widget_get_preferred_height(bar, &least, &height);

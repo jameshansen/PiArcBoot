@@ -30,6 +30,7 @@
 #include "dbugsys.h"
 #include "sound.h"
 #include "displaydev.h"
+#include "../snap.h"
 
 #ifdef SOUND_SUPPORT
 #define MAX_BATCH_SIZE 1024
@@ -493,7 +494,7 @@ static void Sound_Process(ARMul_State *state,size_t avail)
 }
 #endif /* SOUND_SUPPORT */
 
-static void Sound_DMAEvent(ARMul_State *state,CycleCount nowtime)
+void Sound_DMAEvent(ARMul_State *state,CycleCount nowtime)   /* not static: a save state names it */
 {
   size_t srcbatchsize, avail;
 #ifdef SOUND_SUPPORT
@@ -588,4 +589,24 @@ void Sound_Shutdown(ARMul_State *state)
 #ifdef SOUND_SUPPORT
   Sound_ShutdownHost(state);
 #endif
+}
+
+/* For a save state: what the sound has fetched and not yet handed on, and the rates it works to */
+void Sound_Snap(snap_t *s)
+{
+#ifdef SOUND_SUPPORT
+  SNAP(s, channelAmount);
+  SNAP(s, soundBufferAmt);
+  if (soundBufferAmt > SOUNDBUFFER_SIZE)
+  {
+    s->bad = 1;
+    soundBufferAmt = 0;
+  }
+  snap_bytes(s, soundBuffer, soundBufferAmt * sizeof *soundBuffer);
+  SNAP(s, soundTime);
+  SNAP(s, soundTimeStep);
+  SNAP(s, soundScale);
+  SNAP(s, Sound_FudgeRate);
+#endif
+  SNAP(s, Sound_DMARate);
 }

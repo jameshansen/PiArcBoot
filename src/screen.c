@@ -17,6 +17,7 @@
 #include "../arcem/arch/dbugsys.h"
 #include "../arcem/arch/displaydev.h"
 #include "../arcem/arch/ControlPane.h"
+#include "../arcem/snap.h"
 #include "piarcboot.h"
 #include "core.h"
 
@@ -34,6 +35,11 @@ static int back_w, back_h, xscale = 1;
 static uint32_t colour(unsigned col)
 {
 	return (col & 15) * 0x110000u | (col >> 4 & 15) * 0x1100u | (col >> 8 & 15) * 0x11u;
+}
+
+int screen_xscale(void)
+{
+	return xscale;
 }
 
 void screen_alloc(void)
@@ -199,6 +205,28 @@ static const DisplayDev screen_dev = {
 	vidc_write,
 	SDD_Name(DAGWrite),
 	SDD_Name(IOEBCRWrite),
+};
+
+/* For a save state: the VIDC's registers and where the driver has got to in the frame. Reading
+   one back has the driver ask for its mode again at the next frame and draw the whole of it,
+   drawing nothing before then. */
+void screen_snap(ARMul_State *state, snap_t *s)
+{
+	SNAP(s, VIDC);
+	SNAP(s, DC);
+	if (s->saving)
+		return;
+	DC.ModeChanged = true;
+	DC.ModeSupported = false;
+	DC.LastHostWidth = DC.LastHostHeight = DC.LastHostHz = -1;
+	DC.DirtyPalette = 65535;
+	memset(HD.RefreshFlags, 0xff, sizeof HD.RefreshFlags);
+	HD.BorderCol = SDD_Name(Host_GetColour)(state, VIDC.BorderCol);
+}
+
+/* The driver's events, which a save state names by their place here */
+const EventQ_Func screen_events[] = {
+	SDD_Name(FrameStart), SDD_Name(FrameEnd), SDD_Name(RowStart), SDD_Name(DisplayEnd), SDD_Name(SkipFrame), NULL
 };
 
 bool DisplayDev_Init(ARMul_State *state)

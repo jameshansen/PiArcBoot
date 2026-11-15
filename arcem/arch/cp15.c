@@ -5,6 +5,7 @@
 #ifdef ARMUL_COPRO_SUPPORT
 #include "../armcopro.h"
 #include "cp15.h"
+#include "../snap.h"
 
 /* VLSI ARM3 VL86C020 */
 #define ARM3_CPU_ID                 0x41560300
@@ -217,6 +218,12 @@ static const ARMul_CoPro ARM3CoPro = {
 void ARM3_CoProAttach(ARMul_State *state)
 {
   ARMul_CoProAttach(state, 15, &ARM3CoPro);
+}
+
+/* For a save state: the ARM3's cache control registers */
+void ARM3_Snap(snap_t *s)
+{
+  SNAP(s, ARM3_CP15_Registers);
 }
 
 #endif

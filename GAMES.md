@@ -3,7 +3,7 @@
 Every game PiArcBoot lists, 113 in its JASPP tab and 23 in Classics. PiArcBoot contains none of them. Install downloads each one, and an installed game plays offline.
 
 - **Hard disc install**: its installer's files are copied onto a folder the machine reads directly, so it starts with no discs to swap.
-- **Windows Only**: it plays in the RISC OS desktop and is shown cropped to its windows.
+- **Crop to Window**: it plays in the RISC OS desktop and is shown cropped to its windows.
 - **Support pack**: it installs with ROO311's support pack, the newer Window Manager and the Toolbox it needs.
 - **1.6MB disc**: its disc is a high density one, so the machine becomes an A5000 to read it.
 
@@ -53,7 +53,7 @@ Released by [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservat
 | Freddy's Folly | 1988 | Minerva | 1 |  |
 | Giant Killer | 1990 | Topologika | 1 |  |
 | Gods | 1992 | Krisalis Software | 2 |  |
-| Haunted House | 1993 | The Fourth Dimension | 2 | Hard disc install, Windows Only |
+| Haunted House | 1993 | The Fourth Dimension | 2 | Hard disc install, Crop to Window |
 | Heimdall | 1993 | Krisalis Software | 5 |  |
 | Hero Quest | 1991 | Krisalis Software | 1 |  |
 | Holed Out!! Compendium | 1991 | The Fourth Dimension | 2 |  |
@@ -74,7 +74,7 @@ Released by [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservat
 | Maddingly Hall | 1989 | Minerva | 1 |  |
 | Mad Professor Mariarti | 1990 | Krisalis Software | 1 |  |
 | Magic Pockets | 1993 | Renegade | 1 |  |
-| Mah-Jong Patience | 1990 | Cambridge International Software | 1 | Windows Only |
+| Mah-Jong Patience | 1990 | Cambridge International Software | 1 | Crop to Window |
 | Man at Arms | 1990 | The Fourth Dimension | 1 |  |
 | Manchester United Europe | 1991 | Krisalis Software | 1 |  |
 | Memory Magic | 1990 | Cambridge International Software | 1 |  |
@@ -95,7 +95,7 @@ Released by [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservat
 | Poizone | 1991 | Eterna | 1 |  |
 | Populous | 1992 | Krisalis Software | 1 |  |
 | Powerband [Mark 2 version] | 1990 | The Fourth Dimension | 2 |  |
-| Premier Manager | 1994 | Gremlin Graphics | 1 | Windows Only |
+| Premier Manager | 1994 | Gremlin Graphics | 1 | Crop to Window |
 | Pysanki | 1990 | The Fourth Dimension | 1 |  |
 | Quest For Gold | 1992 | Krisalis Software | 2 |  |
 | Raw Power | 1993 | Software 42 | 2 | Hard disc install |
@@ -107,7 +107,7 @@ Released by [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservat
 | Sensible Soccer | 1993 | Renegade | 2 |  |
 | Serpents | 1993 | Cambridge International Software | 1 |  |
 | Silver Ball | 1997 | The Fourth Dimension | 2 |  |
-| SimCity | 1993 | Krisalis Software | 1 | Windows Only |
+| SimCity | 1993 | Krisalis Software | 1 | Crop to Window |
 | SpeedBall 2 | 1994 | Krisalis Software | 1 |  |
 | SpeedBall 2 [RPC version] | 2001 | R-Comp Interactive | 1 | 1.6MB disc |
 | Spheres of Chaos | 1992 | Matt Black | 1 |  |

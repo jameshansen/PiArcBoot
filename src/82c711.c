@@ -28,6 +28,7 @@
 #include "piarcboot.h"
 #include "disc.h"
 #include "core.h"
+#include "../arcem/snap.h"
 
 #define REV ((uint64_t)MACHINE_HZ / 5)          /* a revolution at 300 rpm */
 #define US ((uint64_t)MACHINE_HZ / 1000000)
@@ -868,4 +869,18 @@ void c711_regular(void)
 int c711_motor(void)
 {
 	return (K.dor & 0xf0) != 0;
+}
+
+/* For a save state: no command is executing, so nothing points into a disc */
+int c711_idle(void)
+{
+	return K.exec == X_NONE;
+}
+
+/* The 82C711's registers, taken with no command executing */
+void c711_snap(snap_t *s)
+{
+	SNAP(s, K);
+	if (!s->saving)
+		K.side = NULL;
 }
