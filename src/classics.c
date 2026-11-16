@@ -25,8 +25,7 @@
 #define BIG_ROOM (DISC_ROOM + 4 * 10240) /* and with the 4 tracks more an object too big for that may have */
 #define MAX_PACKMAN 200
 
-/* Acorn Arcade's free games. Terramex keeps time by VSync: its own patch halves the VSyncs on the
-   faster monitors of later machines, and at this machine's 50 Hz it plays at its own speed. */
+/* Acorn Arcade's free games */
 static const classic_t arcade[] = {
 	{ "Asylum", "Asylum", "1994, Andy Southgate", "asylum.acornarcade/asy202.zip", ASYLUM "asy202.zip", "AsyNu/", "!Asylum", CLASSIC_ARCADE },
 	/* its application is !Élite, with the é of RISC OS's Latin-1, which HostLink starts as it is */
@@ -36,8 +35,6 @@ static const classic_t arcade[] = {
 	/* release 3.21, free from its own site, which is where it comes from (its presets give it ROO311's support pack) */
 	{ "Star-Fighter-3000", "Star Fighter 3000", "1994, Fednet Software, release 3.21 by Christopher Bazley", "",
 	  "http://starfighter.acornarcade.com/download/sf3000.zip", "", "!Star3000", CLASSIC_ARCADE },
-	{ "Terramex", "Terramex", "1987, Shaun Hollingworth and Pete Harrap, Krisalis Software", "acornarcade/terra.zip",
-	  ARCADE "terra.zip", "", "!Terramex", CLASSIC_ARCADE },
 };
 
 /* The PackMan sources the tab starts with: RISC OS Open's own and the third party one it hosts */

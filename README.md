@@ -41,7 +41,7 @@ This is a passion project, making some of these old favourites easy to pick up a
 
 ## Games
 
-PiArcBoot lists 113 JASPP games and 17 Classics, including:
+PiArcBoot lists 113 JASPP games and 16 Classics, including:
 
 - **JASPP**: Lemmings, Lemmings 2: The Tribes, Gods, Magic Pockets, Cannon Fodder, SpeedBall 2, Sensible Soccer, Chocks Away, Lotus Turbo Challenge 2, Populous, SimCity, James Pond, Fire & Ice, Chuck Rock and Pac-mania
 - **Classics**: Elite, Star Fighter 3000, Asylum and Oddball.
@@ -92,7 +92,7 @@ Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 2
 - The 110 games that take over the screen boot from their first disc to their own screens within 65 seconds, whether a title, a demo, a menu or a request for their next disc, Botkiller 2 and the Risc PC version of Speedball 2 from their 1.6MB discs
 - The games' disc checks pass, among them Hero Quest's, Fire and Ice's and Blaston's, and what Jet Fighter writes to its boot disc is kept
 - Blank discs format, take files and read back after a fresh power on
-- The 5 Acorn Arcade games and 12 PackMan games in Classics install and start, Star Fighter 3000 and Meteors full screen
+- The 4 Acorn Arcade games and 12 PackMan games in Classics install and start, Star Fighter 3000 and Meteors full screen
 - Elite reaches its title 8 seconds after power on, where loading at a real drive's speed takes 39
 - Mah-Jong Patience, Premier Manager and SimCity, which play in the RISC OS desktop, start in their windows and are shown cropped to them, as Haunted House is
 - The 9 games with a hard disc installer install onto a folder the machine reads directly and start from there: Black Angel, Break 147 & Superpool, Carnage Inc, Drop Ship, The Exotic Adventures of Sylvia Layne, Haunted House, Raw Power, Saloon Cars Deluxe and Stunt Racer 2000

@@ -11,4 +11,3 @@ Acorn Arcade obtained permission from the games' authors and rights holders to d
 Files
 
 elite.zip       ArcElite, the Archimedes Elite, by Warren Burch and Clive Gringras after Ian Bell and David Braben. Updated by Richard Goodwin and Jeffrey Lee.
-terra.zip       Terramex, version 2.05, by Shaun Hollingworth and Pete Harrap (Krisalis Software, 1987), with RISC OS changes by G. Crockford. Distributed with Shaun Hollingworth's permission.

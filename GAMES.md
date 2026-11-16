@@ -1,6 +1,6 @@
 # Games
 
-Every game PiArcBoot lists, 113 in its JASPP tab and 17 in Classics. PiArcBoot contains none of them. Install downloads each one, and an installed game plays offline.
+Every game PiArcBoot lists, 113 in its JASPP tab and 16 in Classics. PiArcBoot contains none of them. Install downloads each one, and an installed game plays offline.
 
 - **Hard disc install**: its installer's files are copied onto a folder the machine reads directly, so it starts with no discs to swap.
 - **Crop to Window**: it plays in the RISC OS desktop and is shown cropped to its windows.
@@ -137,7 +137,6 @@ Freely distributable games that come as RISC OS applications, former commercial 
 | Elite | 1991, Warren Burch and Clive Gringras after Ian Bell and David Braben, Hybrid Technology |  |
 | Oddball | 1995, Andy Southgate |  |
 | Star Fighter 3000 | 1994, Fednet Software, release 3.21 by Christopher Bazley | Support pack |
-| Terramex | 1987, Shaun Hollingworth and Pete Harrap, Krisalis Software |  |
 
 ## Classics: PackMan
 
