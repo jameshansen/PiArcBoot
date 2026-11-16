@@ -10,16 +10,5 @@ Acorn Arcade obtained permission from the games' authors and rights holders to d
 
 Files
 
-bigbang.zip     Big Bang, by Psycore. Released as freeware by Miles Visman at PomPom Games.
-cycloids.zip    Cycloids, by Tom Cooper (Software 42, 1993). Freeware by permission of Imparo, who own the rights. Copy protection removal and StrongARM compatibility by Jeffrey Lee.
-darkwood.zip    DarkWood, by Tom Cooper (Eclipse, 1995). Copy protection removal and StrongARM compatibility by Jeffrey Lee. Needs a Risc PC.
-dinosaw.zip     DinoSaw, by Tom Cooper, the full version. RISC OS 4 and StrongARM compatibility by A. Nonymous and Jeffrey Lee.
 elite.zip       ArcElite, the Archimedes Elite, by Warren Burch and Clive Gringras after Ian Bell and David Braben. Updated by Richard Goodwin and Jeffrey Lee.
-hamsters.zip    Hamsters, by Tom Cooper. StrongARM and Risc PC compatibility by Jeffrey Lee and Jason Tribbeck.
-ixion.zip       Ixion, by Tom Cooper and Barry Clarkson (Software 42, 1992). Freeware by permission of Imparo.
-phaethon.zip    Phaethon, by Paul Carpenter (System Interrupt, 1993). Made freely available by permission of Hugo Fiennes and Paul Carpenter.
-phaepatch.zip   Theo van den Boogaert's patch for Phaethon on later machines, version 1.04, distributed by Acorn Arcade with his permission.
-revolver.zip    Revolver, by Psycore. Released as freeware by Miles Visman at PomPom Games.
 terra.zip       Terramex, version 2.05, by Shaun Hollingworth and Pete Harrap (Krisalis Software, 1987), with RISC OS changes by G. Crockford. Distributed with Shaun Hollingworth's permission.
-
-WaveLength, also on the page, wasn't on the server when these were downloaded.

@@ -25,21 +25,14 @@
 #define BIG_ROOM (DISC_ROOM + 4 * 10240) /* and with the 4 tracks more an object too big for that may have */
 #define MAX_PACKMAN 200
 
-/* Acorn Arcade's free games. Of the others there, DarkWood needs a Risc PC, and Phaethon its two
-   discs in two drives. Terramex keeps time by VSync: its own patch halves the VSyncs on the
+/* Acorn Arcade's free games. Terramex keeps time by VSync: its own patch halves the VSyncs on the
    faster monitors of later machines, and at this machine's 50 Hz it plays at its own speed. */
 static const classic_t arcade[] = {
 	{ "Asylum", "Asylum", "1994, Andy Southgate", "asylum.acornarcade/asy202.zip", ASYLUM "asy202.zip", "AsyNu/", "!Asylum", CLASSIC_ARCADE },
-	{ "Big-Bang", "Big Bang", "Psycore, from PomPom Games", "acornarcade/bigbang.zip", ARCADE "bigbang.zip", "", "!BigBang", CLASSIC_ARCADE },
-	{ "Cycloids", "Cycloids", "1993, Tom Cooper, Software 42", "acornarcade/cycloids.zip", ARCADE "cycloids.zip", "Cycloids/", "!Cycloids", CLASSIC_ARCADE },
-	{ "DinoSaw", "DinoSaw", "Tom Cooper", "acornarcade/dinosaw.zip", ARCADE "dinosaw.zip", "DinoSaw/", "!DinoSaw", CLASSIC_ARCADE },
 	/* its application is !Élite, with the é of RISC OS's Latin-1, which HostLink starts as it is */
 	{ "ArcElite", "Elite", "1991, Warren Burch and Clive Gringras after Ian Bell and David Braben, Hybrid Technology",
 	  "acornarcade/elite.zip", ARCADE "elite.zip", "elite/", "!\xE9lite", CLASSIC_ARCADE },
-	{ "Hamsters", "Hamsters", "1994, Tom Cooper, Gamesware", "acornarcade/hamsters.zip", ARCADE "hamsters.zip", "", "!Hamsters", CLASSIC_ARCADE },
-	{ "Ixion", "Ixion", "1992, Tom Cooper and Barry Clarkson, Software 42", "acornarcade/ixion.zip", ARCADE "ixion.zip", "Ixion/", "!Ixion", CLASSIC_ARCADE },
 	{ "Oddball", "Oddball", "1995, Andy Southgate", "asylum.acornarcade/oddball.zip", ASYLUM "oddball.zip", "OddballFD/", "!OddBall", CLASSIC_ARCADE },
-	{ "Revolver", "Revolver", "Psycore, from PomPom Games", "acornarcade/revolver.zip", ARCADE "revolver.zip", "", "!revolver", CLASSIC_ARCADE },
 	/* release 3.21, free from its own site, which is where it comes from (its presets give it ROO311's support pack) */
 	{ "Star-Fighter-3000", "Star Fighter 3000", "1994, Fednet Software, release 3.21 by Christopher Bazley", "",
 	  "http://starfighter.acornarcade.com/download/sf3000.zip", "", "!Star3000", CLASSIC_ARCADE },
@@ -691,6 +684,14 @@ static void add_presets(const char *id, adfs_file_t **files, int *n)
 	snprintf(name, sizeof name, "presets/%s", id);
 	if (store_asset(name, dir, sizeof dir))
 		add_presets_in(dir, "", files, n);
+}
+
+/* Whether a game's presets show it cropped to its windows, for a game whose settings don't say */
+int preset_crop(const game_t *g)
+{
+	char v[16];
+
+	return preset_setting(g->preset[0] ? g->preset : g->id, "crop", v, sizeof v) && atoi(v);
 }
 
 /* presets/<game>.ini: a key=value line for each setting, with # starting a comment line */

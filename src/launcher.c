@@ -77,7 +77,7 @@ static int dlg_kind;
 static int dlg_desktop, dlg_menu;
 static char dlg_choices[40][64];
 static int dlg_nchoices, dlg_choice;
-static int dlg_ro[MAX_DISCS], dlg_changed[MAX_DISCS], dlg_capture, dlg_a3000, dlg_real_drive, dlg_hide_drive;
+static int dlg_ro[MAX_DISCS], dlg_changed[MAX_DISCS], dlg_capture, dlg_a3000, dlg_real_drive, dlg_hide_drive, dlg_crop;
 static char dlg_image[MAX_DISCS][64];   /* each disk's image format */
 static sprite_t *dlg_sprites;
 static int dlg_nsprites, dlg_sprite;
@@ -241,6 +241,7 @@ static void open_settings(const game_t *g)
 	dlg_a3000 = g->a3000;
 	dlg_real_drive = g->real_drive;
 	dlg_hide_drive = HIDES_DRIVE(g);
+	dlg_crop = CROPS(g);
 	dlg_menu = g->menu;
 	dlg_scroll = dlg_fitted = 0;
 	for (i = 0; i < g->ndiscs; i++)
@@ -844,13 +845,28 @@ static int draw_classics(int x, int y, int w)
 	return y + 24 - top;
 }
 
+/* Whether a game is on My Games: one of the user's own, or a Classics game installed from an entry
+   the list has since left out, which can still be played and uninstalled from there. PackMan's
+   part of the list comes over the network, so its games stay on Classics. */
+static int my_game(const game_t *g)
+{
+	int i;
+
+	if (g->jaspp || (g->classic && !strncmp(g->id, "pkg-", 4)))
+		return 0;
+	for (i = 0; g->classic && i < classic_count(); i++)
+		if (!strcmp(classic_entry(i)->id, g->id))
+			return 0;
+	return 1;
+}
+
 /* How many games a tab other than About shows for the search */
 static int tab_count(int t)
 {
 	int i, n = 0;
 
 	for (i = 0; t != TAB_CLASSICS && i < n_games; i++)
-		n += (t == TAB_JASPP ? games[i].jaspp : !games[i].jaspp && !games[i].classic) && matches(games[i].title, games[i].info);
+		n += (t == TAB_JASPP ? games[i].jaspp : my_game(&games[i])) && matches(games[i].title, games[i].info);
 	for (i = 0; t == TAB_JASPP && i < catalog_count(); i++)
 		n += !installed(catalog_entry(i)->id) && catalog_entry(i)->floppies > 0 && matches(catalog_entry(i)->title, catalog_entry(i)->info);
 	for (i = 0; t == TAB_CLASSICS && i < classic_count(); i++)
@@ -968,9 +984,9 @@ static int draw_list(int vx, int vy, int vw, int vh)
 		int added = 0;          /* games of the user's own, whatever the search */
 
 		for (i = 0; i < n_games; i++)
-			added |= !games[i].jaspp && !games[i].classic;
+			added |= my_game(&games[i]);
 		for (i = 0; i < n_games; i++)
-			if (!games[i].jaspp && !games[i].classic && matches(games[i].title, games[i].info))
+			if (my_game(&games[i]) && matches(games[i].title, games[i].info))
 			{
 				lit = next_row(y);
 				hit = y + ROW_H > vy && y < vy + vh ?
@@ -1162,7 +1178,7 @@ static void draw_dialog(int win_w, int win_h)
 	int mine = dlg == DLG_SETTINGS && !dlg_game.jaspp && !dlg_game.classic;
 	int thumbs = dlg_nsprites < MAX_THUMBS ? dlg_nsprites : MAX_THUMBS;
 	int disks = dlg == DLG_SETTINGS && dlg_game.ndiscs ? DISK_TABLE_H(dlg_game.ndiscs) + 8 : 0;
-	int full = (mine ? 324 + (thumbs > 8 ? (thumbs - 1) / 8 * 54 : 0) : dlg == DLG_PROGRESS ? 172 : 160) + disks + (dlg == DLG_SETTINGS ? (mine ? 60 : 120) : 0);
+	int full = (mine ? 324 + (thumbs > 8 ? (thumbs - 1) / 8 * 54 : 0) : dlg == DLG_PROGRESS ? 172 : 160) + disks + (dlg == DLG_SETTINGS ? (mine ? 90 : 150) : 0);
 	int h = full < win_h - 8 ? full : win_h - 8;
 	int w = DLG_W < win_w - 24 ? DLG_W : win_w - 24, cw = w;
 	int x = (win_w - w) / 2, y = (win_h - h) / 2, ok_x, by, cx, cy, i, closed, add = 0, px = rg_in.x, py = rg_in.y;
@@ -1299,21 +1315,23 @@ static void draw_dialog(int win_w, int win_h)
 				if (rg_over(tx, ty, 48, 48) && rg_in.released)
 					dlg_sprite = i;
 			}
-			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 8, 22, "Capture the mouse with a click", &dlg_capture, 1);
-			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 38, 22, "Run at A3000 speed (8 MHz ARM2)", &dlg_a3000, 1);
+			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 8, 22, "Capture Mouse on Click", &dlg_capture, 1);
+			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 38, 22, "Slower Mode (A3000 Speed)", &dlg_a3000, 1);
 			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 68, 22, "Load floppies at a real drive's speed", &dlg_real_drive, 1);
 			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 98, 22, "Hide Disk Drive Menu", &dlg_hide_drive, 1);
-			draw_disks(cx, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 128, cw - 44, 1);
+			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 128, 22, "Crop to Desktop Window", &dlg_crop, 1);
+			draw_disks(cx, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 158, cw - 44, 1);
 		}
 		else
 		{
 			rg_option(cx, cy, 22, "Create desktop shortcut", &dlg_desktop, 1);
 			rg_option(cx, cy + 30, 22, "Create menu shortcut", &dlg_menu, 1);
-			rg_option(cx, cy + 60, 22, "Capture the mouse with a click", &dlg_capture, 1);
-			rg_option(cx, cy + 90, 22, "Run at A3000 speed (8 MHz ARM2)", &dlg_a3000, 1);
+			rg_option(cx, cy + 60, 22, "Capture Mouse on Click", &dlg_capture, 1);
+			rg_option(cx, cy + 90, 22, "Slower Mode (A3000 Speed)", &dlg_a3000, 1);
 			rg_option(cx, cy + 120, 22, "Load floppies at a real drive's speed", &dlg_real_drive, 1);
 			rg_option(cx, cy + 150, 22, "Hide Disk Drive Menu", &dlg_hide_drive, 1);
-			draw_disks(cx, cy + 186, cw - 44, 0);
+			rg_option(cx, cy + 180, 22, "Crop to Desktop Window", &dlg_crop, 1);
+			draw_disks(cx, cy + 216, cw - 44, 0);
 		}
 		if (h < full)
 		{
@@ -1360,6 +1378,7 @@ static void draw_dialog(int win_w, int win_h)
 				g.a3000 = dlg_a3000;
 				g.real_drive = dlg_real_drive;
 				g.hide_drive = dlg_hide_drive == (g.ndiscs <= 1) ? -1 : dlg_hide_drive;    /* the default goes on following the number of discs */
+				g.crop = dlg_crop == preset_crop(&g) ? -1 : dlg_crop;    /* and the presets' */
 				if (g.ndiscs == dlg_game.ndiscs)        /* the disks in the order the box has them */
 				{
 					for (i = 0; i < g.ndiscs; i++)

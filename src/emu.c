@@ -773,7 +773,7 @@ void HDC_Write(ARMul_State *state, uint_fast16_t offset, uint_fast16_t data)
 
 enum { HL_HELLO = 0x20, HL_POLL, HL_EVENT, HL_POINTER };
 
-int emu_hostlink, emu_host_modes, emu_host_clicked, emu_host_missed, emu_host_errors, emu_host_tasks, emu_host_error_open;
+int emu_hostlink, emu_host_modes, emu_host_clicked, emu_host_missed, emu_host_errors, emu_host_tasks, emu_host_error_open, emu_host_polls, emu_host_mode;
 int emu_host_nwins, emu_host_wins[31][4];
 int emu_host_modes_at_run = -1, emu_host_errors_at_run = -1, emu_host_tasks_at_run = -1, emu_host_vidc_at_run = -1;
 static struct
@@ -828,6 +828,7 @@ static bool hostlink_swi(ARMul_State *state, unsigned number)
 
 		case HL_POLL:   /* the next command, its text written to the module's buffer */
 		{
+			emu_host_polls++;
 			ARMword buf = state->Reg[0], size = state->Reg[1];
 
 			state->Reg[0] = 0;
@@ -855,6 +856,7 @@ static bool hostlink_swi(ARMul_State *state, unsigned number)
 		if (state->Reg[0] == 1)         /* a new mode, with its eigen factors */
 		{
 			emu_host_modes++;
+			emu_host_mode = (int)state->Reg[1];
 			emu_host_xeig = state->Reg[2] <= 3 ? (int)state->Reg[2] : -1;
 			emu_host_yeig = state->Reg[3] <= 3 ? (int)state->Reg[3] : -1;
 		}
@@ -907,6 +909,12 @@ const char *emu_extrom_dir, *emu_hostfs_dir;
    so only the processor slows. */
 #define A3000_FETCH 5
 int emu_a3000;
+
+void emu_set_a3000(int on)
+{
+	emu_a3000 = on;
+	ARMul_FetchCycles = on ? A3000_FETCH : 1;
+}
 
 int emu_start(const char *rom, const uint8_t *cmos_in, int fdc)
 {

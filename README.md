@@ -41,7 +41,7 @@ This is a passion project, making some of these old favourites easy to pick up a
 
 ## Games
 
-PiArcBoot lists 113 JASPP games and 23 Classics, including:
+PiArcBoot lists 113 JASPP games and 17 Classics, including:
 
 - **JASPP**: Lemmings, Lemmings 2: The Tribes, Gods, Magic Pockets, Cannon Fodder, SpeedBall 2, Sensible Soccer, Chocks Away, Lotus Turbo Challenge 2, Populous, SimCity, James Pond, Fire & Ice, Chuck Rock and Pac-mania
 - **Classics**: Elite, Star Fighter 3000, Asylum and Oddball.
@@ -70,7 +70,7 @@ Restoring a save puts back anything the game wrote to a floppy too, while files 
 - **Every game is its own program**, with its own window, taskbar icon and shortcuts.
 - **Any window size, and full screen**, with the picture kept sharp at every size.
 - **Quick loading.** Games load from their floppies much faster than a real drive manages.
-- **A3000 speed.** A game's Settings can run it at the speed of an A3000's 8 MHz ARM2 rather than a 25 MHz ARM3, for a game made for the slower machine, and can load its floppies at a real drive's speed.
+- **A3000 speed.** Slower Mode, in a game's Settings or its Settings menu while it plays, runs it at the speed of an A3000's 8 MHz ARM2 rather than a 25 MHz ARM3, for a game made for the slower machine, and Real Drive Speed loads its floppies at a real drive's speed.
 - **Save states.** Every game gets 3 save slots, each one holding the whole machine as it was at that moment along with a screenshot of it. One slot is saved every 30 seconds of play, and a game with saves opens on all 3 side by side, so you can continue one or start a new game in an empty slot.
 - **Search** across the game lists, and each tab shows how many of its games match.
 - **Disc switching** from the Disk Drive menu or with Ctrl, Alt and a number, and auto switch points, which change the disc by themselves when a game shows the screen that asks for it. Select Disk in the same menu puts any disc image in the drive.
@@ -78,7 +78,7 @@ Restoring a save puts back anything the game wrote to a floppy too, while files 
 - **Your own archives.** A zip, Spark or ArcFS archive of RISC OS applications becomes a game too, starting from the application named after the archive, or its biggest.
 - **Hard disc installs.** The games that came with a hard disc installer, such as Black Angel, Carnage Inc and Raw Power, have the files it would copy taken straight off their disc images as they install, or as their discs are added with Add Game, so they start from a folder the machine reads directly with no discs to swap.
 - **Saves are kept** in a file beside each disc image, and the image itself is never changed. Any disc can be made read only.
-- **Crop to Window** for a game that plays in the RISC OS desktop: the picture is cropped to the game's windows, leaving out the icon bar and the desktop around them, and it follows them as they open, close and move. The Game menu turns it on or off for any game, your own included, and the games that need it start with it on.
+- **Crop to Desktop Window** for a game that plays in the RISC OS desktop: the picture is cropped to the game's windows, leaving out the icon bar and the desktop around them, and it follows them as they open, close and move. The Settings menu or a game's Settings turns it on or off for any game, your own included, and the games that need it start with it on.
 - **Copy protection as the disc has it**, so the games' own disc checks pass.
 
 <p align="center"><img src="docs/lemmings_shaders.png" alt="Lemmings' first level in a window of its own through a CRT shader, under its Game and Saves menus"></p>
@@ -92,7 +92,7 @@ Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 2
 - The 110 games that take over the screen boot from their first disc to their own screens within 65 seconds, whether a title, a demo, a menu or a request for their next disc, Botkiller 2 and the Risc PC version of Speedball 2 from their 1.6MB discs
 - The games' disc checks pass, among them Hero Quest's, Fire and Ice's and Blaston's, and what Jet Fighter writes to its boot disc is kept
 - Blank discs format, take files and read back after a fresh power on
-- The 11 Acorn Arcade games and 12 PackMan games in Classics install and start, Star Fighter 3000 and Meteors full screen
+- The 5 Acorn Arcade games and 12 PackMan games in Classics install and start, Star Fighter 3000 and Meteors full screen
 - Elite reaches its title 8 seconds after power on, where loading at a real drive's speed takes 39
 - Mah-Jong Patience, Premier Manager and SimCity, which play in the RISC OS desktop, start in their windows and are shown cropped to them, as Haunted House is
 - The 9 games with a hard disc installer install onto a folder the machine reads directly and start from there: Black Angel, Break 147 & Superpool, Carnage Inc, Drop Ship, The Exotic Adventures of Sylvia Layne, Haunted House, Raw Power, Saloon Cars Deluxe and Stunt Racer 2000
@@ -102,7 +102,7 @@ Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 2
 
 - Joysticks aren't supported
 - Champions installs with 3 of its 5 discs, the ones JASPP's package has
-- DarkWood, which needs a Risc PC, and Phaethon, which needs two drives, aren't in Classics, nor are the PackMan games that need SharedCLibrary 5, more than 4MB or a screen mode an Archimedes can't show (`presets/README.md` lists them)
+- The PackMan games that need SharedCLibrary 5, more than 4MB or a screen mode an Archimedes can't show aren't in Classics (`presets/README.md` lists them)
 
 ## Install
 
@@ -166,15 +166,17 @@ Drag the window's edge or maximize it and the picture grows to fill the frame, k
 
 **Shaders** in the Game menu draws the picture as a CRT monitor showed it. CRT-Royale-Pi has the scanlines, phosphor mask and glow of a real tube, and CRT-Pi is a lighter scanline and mask shader. A Raspberry Pi 400 keeps up with either. Off draws the picture as it is. The choice holds for every game, and while a shader is on, 1x Scale isn't available.
 
-Each game opens in one window at a time. Starting it again while it's open says so instead of opening a second copy.
+Each game opens in one window at a time. Starting it again while it's open says so instead of opening a second copy. When a game quits to the RISC OS desktop, from its own menu or by closing its windows, the window closes too.
 
-**Crop to Window** in the Game menu shows just the game's windows, for a game that plays in the RISC OS desktop, and the pointer then goes where yours is over the picture. PiArcBoot remembers the choice for each game.
+**Crop to Desktop Window** in the Settings menu shows just the game's windows, for a game that plays in the RISC OS desktop, and the pointer then goes where yours is over the picture. The window takes their shape and follows it as they change. PiArcBoot remembers the choice for each game.
 
 The **Saves** menu has 3 slots, and each one has **Save**, which keeps the whole machine as it is right now, **Restore**, which puts it back the way that slot has it, and **Selected for Auto Save**, which is ticked for the slot that gets written every 30 seconds of play. Restoring a slot also makes it the one Auto Save writes to. Saving to another slot that already holds a save asks first. A slot holding a save from an earlier session won't be written over until you restore it, save to it or choose a slot. Restoring rolls back anything the game wrote to a floppy as well, but files in a game's own folder stay as they are.
 
 When a game has saves, it starts on the selector, which shows the 3 slots side by side with their screenshots and when each one was saved. **Continue** restores a slot, **New Game** starts the game fresh in an empty one and **Erase** deletes a save after asking first, and whichever slot you pick becomes the one Auto Save writes to. **Open Selector** in the Saves menu brings it up during a game, which waits behind it until you close it and carry on where you were.
 
-The **Disk Drive** menu puts one of the game's discs in the drive. To set an auto switch point, wait for the game to ask for a disc, choose **Set Auto Switch Point** and then choose the disc. **Clear Auto Switch Points** forgets them all. **Select Disk...** puts a disc image from anywhere on your computer in the drive, and what the game writes to it goes in a `.sav` file beside it, as for the game's own discs. **Hide Disk Drive Menu** in a game's Settings takes the menu away, and it's ticked by default for a game with one disc. Ctrl+Alt and a number still change the disc while the menu is hidden.
+The **Disk Drive** menu puts one of the game's discs in the drive. To set an auto switch point, wait for the game to ask for a disc, choose **Set Auto Switch Point** and then choose the disc. **Clear Auto Switch Points** forgets them all. **Select Disk...** puts a disc image from anywhere on your computer in the drive, and what the game writes to it goes in a `.sav` file beside it, as for the game's own discs. **Hide Disk Drive Menu** in the Settings menu or a game's Settings takes the menu away, and it's ticked by default for a game with one disc. Ctrl+Alt and a number still change the disc while the menu is hidden.
+
+The **Settings** menu has the game's own settings, the same ones its Settings box in the launcher has: **Capture Mouse on Click**, **Slower Mode (A3000 Speed)**, **Real Drive Speed**, **Hide Disk Drive Menu** and **Crop to Desktop Window**. A change there takes effect straight away and is kept for that game.
 
 Games are kept in `~/.local/share/piarcboot/games`, a folder each, with their disc images, saved changes (`.sav`), save states (`saves/`), icon and settings.
 
@@ -186,7 +188,7 @@ The machine is [ArcEm](https://github.com/ArcEm-emu/ArcEm)'s, set up as an Archi
 
 The machine runs 25 million cycles to a second of its own time, a fixed rate rather than one measured against the host, so a game takes the same machine time on every computer and a test script gives the same result every time. The game window keeps it to real time a centisecond at a time.
 
-A game boots behind the splash screen with the machine running flat out. A disc that boots gets Shift held until it is first read. For any other disc, ROO311's HostLink module runs the application once the desktop is up, the way a double-click would. HostLink then reports a screen mode change when the game takes the screen, an error box when it asks for a disc, or a new desktop task, whose icon bar icon it clicks for a game that waits to be clicked. The splash stays up until one of those. HostLink also reports where the windows on the screen are, five times a second when they change, as it walks up the Wimp's window stack from the icon bar, and with Crop to Window on, the picture is cropped to the area they cover. A game that plays in the desktop has its icon clicked once its floppy drive has been still for a second.
+A game boots behind the splash screen with the machine running flat out. A disc that boots gets Shift held until it is first read. For any other disc, ROO311's HostLink module runs the application once the desktop is up, the way a double-click would. HostLink then reports a screen mode change when the game takes the screen, an error box when it asks for a disc, or a new desktop task, whose icon bar icon it clicks for a game that waits to be clicked. The splash stays up until one of those. HostLink also reports where the windows on the screen are, five times a second when they change, as it walks up the Wimp's window stack from the icon bar, and with Crop to Desktop Window on, the picture is cropped to the area they cover. A game that plays in the desktop has its icon clicked once its floppy drive has been still for a second.
 
 The floppy controller is a WD1772 written from its data sheet, with the disc turning under it at 300 rpm and each sector passing the head at its place on the track. A JFD image records each sector's place, size, number and CRC errors, which is how JASPP keeps a disc's copy protection, so the games' checks find what they would on the real disc. Botkiller 2 and the Risc PC version of Speedball 2 come on 1.6MB discs, so for those two the machine becomes an A5000, a later Archimedes, with its 82C711, whose 765 floppy controller is also written from its data sheet. A track laid out as a format program lays one down, with nothing copy protection adds, is read faster than a real drive manages, the sector asked for coming under the head at once and its bytes 4 microseconds apart, while the game runs at its usual speed. Any other track keeps a real drive's timing, and a game's Settings can give every track that timing.
 

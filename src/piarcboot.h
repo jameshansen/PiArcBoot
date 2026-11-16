@@ -21,6 +21,7 @@ extern uint8_t emu_host_keys[512];      /* keys held on the real keyboard, by SD
 
 extern const char *emu_extrom_dir;     /* a folder of modules for an extension ROM, read at power on */
 extern int emu_a3000;           /* set before power on: the processor runs at an A3000's speed */
+void emu_set_a3000(int on);     /* and changed while it runs */
 extern const char *emu_hostfs_dir;     /* the folder HostFS shows the machine */
 int emu_start(const char *rom, const uint8_t *cmos, int fdc);
 void emu_step(void);
@@ -47,9 +48,11 @@ int state_load(const char *path, char *why, size_t size);       /* -1, the machi
 /* ROO311's HostLink module, which works the desktop for the game window */
 extern int emu_hostlink;        /* it has made itself known */
 extern int emu_host_modes;      /* screen mode changes it has reported */
+extern int emu_host_mode;       /* the mode the last one was to */
 extern int emu_host_errors;     /* error boxes it has seen open */
 extern int emu_host_error_open; /* one is open just now */
 extern int emu_host_tasks;      /* tasks it has seen start in the desktop */
+extern int emu_host_polls;      /* times its desktop task has asked for a command, 5 a second while the desktop runs */
 extern int emu_host_modes_at_run, emu_host_errors_at_run, emu_host_tasks_at_run;      /* those counts when it last took up a command to start, or -1 */
 extern int emu_host_vidc_at_run;        /* and machine_mode_sets then */
 extern int emu_host_clicked, emu_host_missed;  /* icon bar clicks made, and asked for with no such icon */
@@ -260,6 +263,8 @@ typedef struct
 /* A setting from presets/<game>.ini beside the program, which presets/README.md in the repository
    describes. 1 with its value in buf if the game's file has the key. */
 int preset_setting(const char *id, const char *key, char *buf, size_t size);
+int preset_crop(const game_t *g);
+#define CROPS(g) ((g)->crop >= 0 ? (g)->crop : preset_crop(g))  /* shown cropped to its windows, as its settings or else its presets say */
 const char *needs_support(const adfs_file_t *files, int n);     /* the support pack their !Run files ask for, or "" */
 int write_hostfs(const char *dir, const adfs_file_t *f, int n);  /* files written in a folder as HostFS names them; 0 when all were */
 int has_installer(const game_t *g, const char *id);             /* its presets have an installer script for it */
@@ -296,6 +301,7 @@ typedef struct
 
 union SDL_Event;
 int menubar_open(const char *const *titles, int n);
+void menubar_titles(const char *const *titles, int n);
 void menubar_set(const menu_item_t *items, int n);
 void menubar_event(const union SDL_Event *e);
 int menubar_poll(void);

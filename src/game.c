@@ -10,8 +10,9 @@
    machine kept in a file: one of them is written every 30 seconds of play, and restoring a slot
    makes it that one. Disk Drive changes the disc in the drive, to one of the game's or to any
    image picked with Select Disk, and an auto switch point remembers the screen a game asks for a
-   disc on, so that the next time the game shows that screen the disc changes by itself. A game's
-   settings can hide Disk Drive, as they do by default for a game with one disc. */
+   disc on, so that the next time the game shows that screen the disc changes by itself. Settings
+   has the game's own settings from its Settings box in the launcher, and changing one there keeps
+   it for the game. One of them hides Disk Drive, as it is by default for a game with one disc. */
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -46,6 +47,8 @@ static SDL_Texture *pic, *big, *icon_tex;        /* the picture, and the picture
 static int pic_w, pic_h, big_w, big_h;
 static int fullscreen, captured, told_capture;
 static int crop, crop_fitted;           /* just the windows on the screen are shown; the window has been fitted to them */
+static Uint32 refit_at;                 /* when the window takes the shape the windows have kept for a second, or 0 */
+static struct { int polls, polled_at, away_from, modes, mode, had_window, had_screen, bare_from; } left;   /* for telling the game has quit to the desktop */
 static int crop_from, now_cs;           /* the centisecond cropping starts, a second after the game is going; the machine's now */
 static int native_bar;                  /* the window has a menu bar of the system's own making */
 static int fit_w, fit_h;                /* the size the window was last given for a size in the menu */
@@ -61,14 +64,12 @@ static const struct { const char *name, *preset; } shaders[] = {
 static settings_t settings;             /* the scale and the shader, the same for every game */
 static int can_shade, shader_on;        /* the renderer is one the shaders run in; the chosen one is loaded and drawing */
 
-#define MENUS 3
+#define MENUS 4
 #define SLOTS 3
-#define MAX_ITEMS (MAX_DISCS + 14 + SLOTS * 4 + NSHADERS)
-static const char *const menu_titles[MENUS] = { "Game", "Saves", "Disk Drive" };
-static int n_menus = MENUS;             /* 2 with Disk Drive hidden */
+#define MAX_ITEMS (10 + NSHADERS + SLOTS * 4 + 1 + MAX_DISCS + 3 + 5)  /* Game, Saves, Disk Drive and Settings at their fullest */
 enum { CMD_FULLSCREEN = 1, CMD_SCALE, CMD_CLOSE = CMD_SCALE + 4, CMD_SET_SWAP, CMD_CLEAR_SWAPS, CMD_SEND_ESC, CMD_CROP, CMD_DISC,
 	CMD_AUTO = 100, CMD_RESTORE = CMD_AUTO + SLOTS, CMD_SAVE = CMD_RESTORE + SLOTS, CMD_SELECTOR = CMD_SAVE + SLOTS, CMD_SNAPSHOT,
-	CMD_PAUSE, CMD_PICK_DISC, CMD_SHADER };
+	CMD_PAUSE, CMD_PICK_DISC, CMD_CAPTURE, CMD_A3000, CMD_REAL_DRIVE, CMD_HIDE_DRIVE, CMD_SHADER };
 static time_t saved_at[SLOTS];          /* when each slot was last written, or 0 for an empty one */
 static int armed;                       /* Auto Save may write its slot: it was empty, or since the game started it has been restored or saved to, or a slot chosen */
 static int want_save, want_restore;     /* a slot to save to or restore, counting from 1, waiting for the floppy drive to finish */
@@ -468,13 +469,35 @@ static void draw_picture(void)
 		if (!fullscreen && !own_size())
 			fit_window();
 	}
-	if (crop && (src.w < emu_w || src.h < emu_h) && !fullscreen && !own_size())
+	/* A game cropped to its windows: the window takes their shape when they first come and grows
+	   at once when they outgrow it. When they have kept a smaller shape for a second, or gone and
+	   left the whole screen, it follows, so a menu or a box that comes and goes doesn't make it jump. */
+	if (crop && !fullscreen && !own_size())
 	{
+		int w, h, whole = src.w == emu_w && src.h == emu_h;
+		Uint32 now = SDL_GetTicks();
+
+		window_size(&w, &h);
+		window_units(&w, &h);
 		if (!crop_fitted)
-			fit_window();           /* the window takes the shape of the game's windows when they first come */
-		else
+		{
+			if (!whole)
+			{
+				fit_window();
+				crop_fitted = 1;
+			}
+		}
+		else if (!whole && (w > fit_w || h > fit_h))
 			grow_window();
-		crop_fitted = 1;
+		else if (w == fit_w && h == fit_h)
+			refit_at = 0;
+		else if (!refit_at)
+			refit_at = now + 1000;
+		else if ((Sint32)(now - refit_at) >= 0)
+		{
+			fit_window();
+			refit_at = 0;
+		}
 	}
 	SDL_UpdateTexture(pic, &all, emu_fb, EMU_FB_W * 4);
 	picture_rect(&dst, &zoom);
@@ -748,6 +771,7 @@ static int restore_slot(int k)
 		return -1;
 	}
 	emu_script_stop();
+	memset(&left, 0, sizeof left);   /* what the game had is told again from the restored machine */
 	swap_pending = 0;
 	in = machine_disc_path(0);
 	for (cur_disc = -1, i = 0; in && i < game.ndiscs; i++)
@@ -1052,10 +1076,61 @@ static void pick_disc(void)
 	free(files);
 }
 
+/* Whether the game has quit to the RISC OS desktop. The desktop is running when HostLink's task
+   asks the emulator for work, 5 times a second while it does. A game that took the screen to
+   itself in a mode of its own for 3 seconds has quit once the desktop is running again, whatever
+   windows are open there, as RISC OS opens the disc's folder when Lemmings goes back to it. A game
+   that plays in the desktop has quit once its windows have closed with the screen in the same mode,
+   even with its icon left on the icon bar. Either way it has to last 3 seconds with no error box
+   open and the floppy drive still. */
+static int game_left(int cs)
+{
+	int live, bare, wins = 0, sh = emu_h * (emu_dbl ? 4 : 2), i;
+
+	for (i = 0; i < emu_host_nwins; i++)    /* a window moved wholly off the screen is hidden, as view() has it */
+		wins += emu_host_wins[i][2] > 0 && emu_host_wins[i][0] < 1280 && emu_host_wins[i][3] > 0 && emu_host_wins[i][1] < sh;
+	if (emu_host_polls != left.polls)
+	{
+		left.polls = emu_host_polls;
+		left.polled_at = cs;
+	}
+	live = left.polled_at && cs - left.polled_at < 50;
+	if (live)
+	{
+		left.away_from = cs;
+		left.modes = emu_host_modes;
+		if (wins)
+		{
+			left.had_window = 1;
+			left.mode = emu_host_mode;
+		}
+	}
+	else if (cs - left.away_from >= 300 && emu_host_modes != left.modes)
+		left.had_screen = 1;
+	bare = live && !emu_host_error_open && !machine_motor_on() && (left.had_screen || (!wins && emu_host_mode == left.mode));
+	if (!bare)
+		left.bare_from = cs;
+	return (left.had_screen || left.had_window) && cs - left.bare_from >= 300;
+}
+
+/* The menus' titles: Game, Saves, Disk Drive unless the game's settings hide it, and Settings.
+   Returns how many. */
+static int menu_titles(const char **t)
+{
+	int n = 0;
+
+	t[n++] = "Game";
+	t[n++] = "Saves";
+	if (!HIDES_DRIVE(&game))
+		t[n++] = "Disk Drive";
+	t[n++] = "Settings";
+	return n;
+}
+
 /* What the menus hold just now, in order. Returns how many items. */
 static int menu_items(menu_item_t *it, int booting)
 {
-	int n = 0, i, slot, sub;
+	int n = 0, i, slot, sub, drive = HIDES_DRIVE(&game) ? -1 : 2, set = drive < 0 ? 2 : 3;
 	char when[32];
 
 	memset(it, 0, sizeof(menu_item_t) * MAX_ITEMS);
@@ -1080,7 +1155,6 @@ static int menu_items(menu_item_t *it, int booting)
 		it[n - 1].sub = sub;
 		it[n - 1].shaded = !can_shade;
 	}
-	ITEM(0, CMD_CROP, crop, 1, "Crop to Window");
 	ITEM(0, CMD_SNAPSHOT, 0, 1, "Save Snapshot");
 	it[n - 1].shaded = booting;
 	ITEM(0, CMD_CLOSE, 0, 1, "Close");
@@ -1101,13 +1175,19 @@ static int menu_items(menu_item_t *it, int booting)
 		it[n - 1].sub = slot;
 		it[n - 1].shaded = booting;
 	}
-	ITEM(1, CMD_SELECTOR, selector, 1, "Open Selector");
-	for (i = 0; i < game.ndiscs; i++)
-		ITEM(2, CMD_DISC + i, i == cur_disc, 0, "Disk %d", disk_number(i));
-	ITEM(2, CMD_SET_SWAP, swap_pending, 1, "Set Auto Switch Point");
+	ITEM(1, CMD_SELECTOR, 0, 1, "Open Selector");
+	for (i = 0; i < game.ndiscs; i++)       /* Disk Drive, which isn't on the bar when it's hidden */
+		ITEM(drive, CMD_DISC + i, i == cur_disc, 0, "Disk %d", disk_number(i));
+	ITEM(drive, CMD_SET_SWAP, swap_pending, 1, "Set Auto Switch Point");
 	if (n_swaps)
-		ITEM(2, CMD_CLEAR_SWAPS, 0, 0, "Clear Auto Switch Points");
-	ITEM(2, CMD_PICK_DISC, 0, 1, "Select Disk...");
+		ITEM(drive, CMD_CLEAR_SWAPS, 0, 0, "Clear Auto Switch Points");
+	ITEM(drive, CMD_PICK_DISC, 0, 1, "Select Disk...");
+	it[n - 1].shaded = booting;     /* the disk stays in while the game boots */
+	ITEM(set, CMD_CAPTURE, !game.nocapture, 0, "Capture Mouse on Click");
+	ITEM(set, CMD_A3000, game.a3000, 0, "Slower Mode (A3000 Speed)");
+	ITEM(set, CMD_REAL_DRIVE, game.real_drive, 0, "Real Drive Speed");
+	ITEM(set, CMD_HIDE_DRIVE, HIDES_DRIVE(&game), 0, "Hide Disk Drive Menu");
+	ITEM(set, CMD_CROP, crop, 0, "Crop to Desktop Window");
 #undef ITEM
 	return n;
 }
@@ -1202,7 +1282,8 @@ static int menu_command(int cmd)
 	}
 	else if (cmd == CMD_CROP)               /* just the game's windows, or the whole screen, kept for next time */
 	{
-		game.crop = crop = !crop;
+		crop = !crop;
+		game.crop = crop == preset_crop(&game) ? -1 : crop;   /* as its presets have it, it goes on following them */
 		crop_fitted = 0;
 		set_capture(0);
 		if (!fullscreen && !crop)
@@ -1215,6 +1296,33 @@ static int menu_command(int cmd)
 		choose_disc(cmd - CMD_DISC);
 	else if (cmd == CMD_PICK_DISC)
 		pick_disc();
+	else if (cmd == CMD_CAPTURE)            /* the game's own settings, which take effect now and are kept in its game.ini */
+	{
+		game.nocapture = !game.nocapture;
+		if (game.nocapture)
+			set_capture(0);
+		store_save(&game);
+	}
+	else if (cmd == CMD_A3000)
+	{
+		game.a3000 = !game.a3000;
+		emu_set_a3000(game.a3000);
+		store_save(&game);
+	}
+	else if (cmd == CMD_REAL_DRIVE)
+	{
+		machine_real_drive = game.real_drive = !game.real_drive;
+		store_save(&game);
+	}
+	else if (cmd == CMD_HIDE_DRIVE)
+	{
+		const char *titles[MENUS];
+		int hide = !HIDES_DRIVE(&game);
+
+		game.hide_drive = hide == (game.ndiscs <= 1) ? -1 : hide;     /* as the default is, it goes on following the number of discs */
+		menubar_titles(titles, menu_titles(titles));
+		store_save(&game);
+	}
 	return 0;
 }
 
@@ -1528,6 +1636,7 @@ int game_main(const char *id, const char *test_script)
 	Uint32 splash_until = 0;        /* after a slot is picked, the splash stays up till then, SDL_GetTicks's time, and the game waits behind it */
 	int run_for = getenv("PIARCBOOT_RUN_FOR") ? atoi(getenv("PIARCBOOT_RUN_FOR")) : 0, lost = 0, shown_cs = 0, drawn = 0;
 	menu_item_t items[MAX_ITEMS], bar_items[MAX_ITEMS];
+	const char *titles[MENUS];
 	int n_items;
 	Uint64 freq, start, began, shown = 0;
 	Uint64 frame_ticks = 0, next_frame;     /* a refresh in performance counter ticks, when the game keeps its own pace, and when its next frame is due */
@@ -1575,7 +1684,6 @@ int game_main(const char *id, const char *test_script)
 	start_shader();
 	SDL_InitSubSystem(SDL_INIT_AUDIO);      /* a machine with no sound still plays, silently */
 	/* The menu bar is the system's own where it has one to give */
-	n_menus = HIDES_DRIVE(&game) ? MENUS - 1 : MENUS;
 	for (i = 0; i < SLOTS; i++)
 		saved_at[i] = slot_time(i);
 	armed = !game.autosave || !saved_at[game.autosave - 1];         /* a save from before isn't written over until the player says */
@@ -1587,7 +1695,7 @@ int game_main(const char *id, const char *test_script)
 			open_selector();
 			break;
 		}
-	native_bar = menubar_open(menu_titles, n_menus);
+	native_bar = menubar_open(titles, menu_titles(titles));
 	n_items = menu_items(bar_items, 1);
 	if (native_bar)
 		menubar_set(bar_items, n_items);
@@ -1603,7 +1711,7 @@ int game_main(const char *id, const char *test_script)
 	memcpy(cmos, default_cmos, sizeof cmos);
 	if (game.classic || game.apps)  /* a 640 by 512 desktop in 256 colours, mode 21 on a multisync monitor, for the games that play in it */
 		machine_cmos_desktop(cmos, 21, 1);
-	crop = game.crop >= 0 ? game.crop : preset_setting(game.preset[0] ? game.preset : game.id, "crop", path, sizeof path) && atoi(path);
+	crop = CROPS(&game);
 	/* The desktop in the screen mode a game's presets name, for one that asks for a mode, and
 	   otherwise for a game shown cropped to its windows, which plays in the desktop, the Classics'
 	   640 by 512 in 256 colours */
@@ -1858,6 +1966,14 @@ int game_main(const char *id, const char *test_script)
 				SDL_Delay(1);
 		}
 
+		/* A game that quits to the desktop closes its window, as closing the window would */
+		if (!booting && !emu_mute && !stopped() && game_left(cs))
+		{
+			if (test_script || getenv("PIARCBOOT_TRACE"))
+				fprintf(stderr, "the game went back to the desktop at %d cs%c", cs, 10);
+			quit = 1;
+		}
+
 		/* A slot to restore or save to, once the floppy drive has finished what it is doing. A slot
 		   restored while the game boots ends the boot there. Either way the game comes up from behind
 		   the splash, after 2 seconds of it, so a pick doesn't land in the middle of play. */
@@ -1912,6 +2028,7 @@ int game_main(const char *id, const char *test_script)
 				machine_disc_reads = machine_mode_sets = 0;
 				booting = emu_mute = 1;
 				cs = last_check = modes_at_read = crop_from = cur_disc = swap_pending = played = drive_on = changed = sig_at = 0;
+				memset(&left, 0, sizeof left);
 				script_end = settle = -1;
 				memset(emu_host_keys, 0, sizeof emu_host_keys);
 				set_capture(0);

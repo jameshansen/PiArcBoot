@@ -1,6 +1,6 @@
 # Games
 
-Every game PiArcBoot lists, 113 in its JASPP tab and 23 in Classics. PiArcBoot contains none of them. Install downloads each one, and an installed game plays offline.
+Every game PiArcBoot lists, 113 in its JASPP tab and 17 in Classics. PiArcBoot contains none of them. Install downloads each one, and an installed game plays offline.
 
 - **Hard disc install**: its installer's files are copied onto a folder the machine reads directly, so it starts with no discs to swap.
 - **Crop to Window**: it plays in the RISC OS desktop and is shown cropped to its windows.
@@ -134,14 +134,8 @@ Freely distributable games that come as RISC OS applications, former commercial 
 | Game | Credits | |
 |---|---|---|
 | Asylum | 1994, Andy Southgate |  |
-| Big Bang | Psycore, from PomPom Games |  |
-| Cycloids | 1993, Tom Cooper, Software 42 |  |
-| DinoSaw | Tom Cooper |  |
 | Elite | 1991, Warren Burch and Clive Gringras after Ian Bell and David Braben, Hybrid Technology |  |
-| Hamsters | 1994, Tom Cooper, Gamesware |  |
-| Ixion | 1992, Tom Cooper and Barry Clarkson, Software 42 |  |
 | Oddball | 1995, Andy Southgate |  |
-| Revolver | Psycore, from PomPom Games |  |
 | Star Fighter 3000 | 1994, Fednet Software, release 3.21 by Christopher Bazley | Support pack |
 | Terramex | 1987, Shaun Hollingworth and Pete Harrap, Krisalis Software |  |
 

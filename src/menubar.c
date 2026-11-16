@@ -6,7 +6,8 @@
    had, menubar_open returns 0 and the window has no menus, though its keys still work.
 
    The menus are given as a flat list of items, an item in a submenu naming the item that opens
-   it, and a chosen item comes back as its command number from menubar_poll. */
+   it, and a chosen item comes back as its command number from menubar_poll. menubar_titles
+   changes the menus' titles, which the next menubar_set builds the bar with. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,7 +21,7 @@
 static char titles[MAX_MENUS][32];
 static int n_titles, chosen;
 
-static void keep_titles(const char *const *names, int n)
+void menubar_titles(const char *const *names, int n)
 {
 	for (n_titles = 0; n_titles < n && n_titles < MAX_MENUS; n_titles++)
 		snprintf(titles[n_titles], sizeof titles[0], "%s", names[n_titles]);
@@ -41,7 +42,7 @@ int menubar_open(const char *const *names, int n)
 		return 0;
 	hwnd = info.info.win.window;
 	SDL_EventState(SDL_SYSWMEVENT, SDL_ENABLE);     /* a chosen item arrives as a WM_COMMAND message */
-	keep_titles(names, n);
+	menubar_titles(names, n);
 	return 1;
 }
 
@@ -222,7 +223,7 @@ int menubar_open(const char *const *names, int n)
 	factor = gtk.widget_get_scale_factor(strip);
 	if (factor < 1)
 		factor = 1;
-	keep_titles(names, n);
+	menubar_titles(names, n);
 	return 1;
 }
 
@@ -355,7 +356,6 @@ int menubar_open(const char *const *names, int n)
 {
 	(void)names;
 	(void)n;
-	(void)keep_titles;
 	return 0;
 }
 
