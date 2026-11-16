@@ -2,7 +2,7 @@
 
 <h1 align="center">PiArcBoot</h1>
 
-<p align="center"><b>Acorn Archimedes games on the Raspberry Pi.</b><br>A free launcher that installs the games released by JASPP, the Archimedes Software Preservation Project, and boots each one straight into the game on an emulated Archimedes based on [ArcEm](https://github.com/ArcEm-emu/ArcEm), with its own icon and shortcuts. It needs no commercial ROM.</p>
+<p align="center"><b>Acorn Archimedes games on the Raspberry Pi.</b><br>A free launcher that installs the games released by JASPP, the Archimedes Software Preservation Project, and boots each one straight into the game on an emulated Archimedes based on <a href="https://github.com/ArcEm-emu/ArcEm">ArcEm</a>, with its own icon and shortcuts. It needs no commercial ROM.</p>
 
 <p align="center"><a href="../../releases/latest"><b>Download for Raspberry Pi OS, Linux or Windows</b></a></p>
 
