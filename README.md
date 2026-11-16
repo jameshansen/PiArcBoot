@@ -8,7 +8,7 @@
 
 <p align="center">Discord: <a href="https://discord.gg/88VzuWSYUc">https://discord.gg/88VzuWSYUc</a></p>
 
-![The launcher's JASPP tab, with four games installed](docs/launcher.png)
+<p align="center"><img src="docs/launcher.png" alt="The launcher's JASPP tab, with four games installed"></p>
 
 Install from a terminal. On a Raspberry Pi or a Linux PC:
 
