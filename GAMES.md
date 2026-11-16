@@ -9,7 +9,7 @@ Every game PiArcBoot lists, 120 in its JASPP tab and 16 in Classics. PiArcBoot c
 
 ## JASPP
 
-Released by [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservation Project, with their publishers' permission, and listed here once they start on ROO311 as they do on RISC OS 3.11.
+Released by [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservation Project, with their publishers' permission, and listed here once they start on ROO311.
 
 | Game | Year | Publisher | Discs | |
 |---|---|---|---|---|
@@ -133,6 +133,87 @@ Released by [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservat
 | World Class Leaderboard | 1993 | Krisalis Software | 1 |  |
 | WorldScape | 1990 | Eclipse | 2 |  |
 | Xenon 2: Megablast | 1993 | Eclipse | 2 | Hard disc install |
+
+## JASPP: left out
+
+The 49 packages in JASPP's feed that the JASPP tab leaves out, and why.
+
+### Not games
+
+Tools and add-ons in JASPP's feed.
+
+| Package | Why |
+|---|---|
+| ADFFS | A floppy disc emulator for RISC OS |
+| CDFaker | Mounts CD images |
+| Courses for Holed Out Compendium | Extra courses for Holed Out Compendium, which is in the list |
+| GEKonfig | Data the GEK games share |
+| HDFFS | A filing system for hard disc images |
+| Partition Manager | A disc partitioning tool |
+| pi-top Utilities | Utilities for the pi-top |
+
+### Versions for later machines
+
+Releases for the StrongARM, the Risc PC, 32-bit RISC OS or CD, packaged as applications for those machines with no floppy image to boot from.
+
+| Package | Why |
+|---|---|
+| Botkiller [32bit version] | For 32-bit RISC OS |
+| Burn'Out [SA version] | For the StrongARM |
+| Chuck Rock [SA version] | For the StrongARM. The original Chuck Rock is in the list |
+| Drifter [SA version] | For the StrongARM, installed to a hard disc first. The original Drifter is in the list |
+| Dune II - Battle for Arrakis [CD version] | On CD |
+| Exodus [32bit version] | For 32-bit RISC OS |
+| Gods [RPC version] | For the Risc PC. The original Gods is in the list |
+| Iron Lord [32bit version] | For 32-bit RISC OS |
+| James Pond [SA version] | For the StrongARM. The original James Pond is in the list |
+| Lemmings 2: The Tribes [SA version] | For the StrongARM. The original Lemmings 2 is in the list |
+| MicroDrive 32M | For 32-bit RISC OS. The original MicroDrive is in the list |
+| Populous [RPC version] | For the Risc PC, and can't find its !System on ROO311. The original Populous is in the list |
+| Pushy II [32bit version] | For 32-bit RISC OS |
+| SimCity 2000 [A5000 version] | Packaged to install on a hard disc |
+| SimCity 2000 [RPC version] | For the Risc PC |
+| SunBurst [32bit version] | For 32-bit RISC OS |
+| Twinworld [32bit version] | For 32-bit RISC OS |
+| Wolfenstein 3D [32bit version] | For 32-bit RISC OS |
+| Zool - Ninja of the 'Nth' Dimension [32bit version] | For 32-bit RISC OS. Started from the desktop it shows nothing, and from the command line it takes 2 minutes to reach its title |
+
+### No floppy image
+
+Packaged as applications, with no floppy image in the package or in the game's release folder on JASPP's server, so there is nothing to boot.
+
+| Package | Why |
+|---|---|
+| Asylum | The Classics tab has Asylum |
+| DropShaft |  |
+| Hamsters |  |
+| Pocket Money Demo |  |
+| The Great Giana Sisters |  |
+| The Swarm |  |
+| World Championship Boxing Manager |  |
+
+### Not playing yet
+
+They have floppy images, but don't play on ROO311 yet.
+
+| Package | Why |
+|---|---|
+| ArcPinball | Stops with "Attempt to use badly nested error handler" over and over |
+| Ballarena | Stays on a blank screen |
+| Brutal Horse Power | Starts with a hard disc installer that needs a !System, which hasn't been tried |
+| Bubble Fair | Asks before it takes over the machine, and then never shows |
+| Cartoon Line part one | Stops with an abort on data transfer after its first screen |
+| Command Ship | Fails its disc check, asking for the original program disc, even with the disc write protected |
+| Emotions - Search for Humanity | Its discs can't be read with either floppy controller |
+| Fine Racer | Asks before it takes over the machine, and then never shows |
+| Flying High | Its discs can't be read with either floppy controller |
+| Formula Two Thousand | Fails its disc check, asking for the original program disc, even with the disc write protected |
+| Grievous Bodily 'ARM | Stops with an abort on data transfer behind its title |
+| Holed Out!! | Asks for its disc to be write protected, even when it is. Holed Out Compendium is in the list |
+| KerBang! | Stops with "Application may have gone wrong" |
+| Minotaur | Stays on a blank screen |
+| Tactic | Stays on a blank screen |
+| The Adventure Collection | COPS and Plague Planet together, which are both in the list |
 
 ## Classics: free games
 
