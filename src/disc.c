@@ -51,6 +51,36 @@ static void wr16(uint8_t *p, unsigned v)
 
 /* CRC-CCITT, polynomial &1021, as the 1772 computes it from &FFFF over the address marks and
    the bytes after them */
+/* A side as a format program lays one down: double or high density sectors all of one size,
+   numbered for this cylinder and side, with good IDs and data, spaced evenly round a track of
+   the usual length. Copy protection makes the other kind. */
+int disc_ordinary(const dside_t *side, int cyl, int head)
+{
+	int rev, gap_min, gap_max = 0, i, k;
+
+	if (!side || side->n < 1 || side->n > 32 || (side->s[0].density != DENS_DOUBLE && side->s[0].density != DENS_HIGH))
+		return 0;
+	rev = side->s[0].density == DENS_HIGH ? DISC_HD_BYTES : DISC_DD_BYTES;
+	if (side->bytes && side->bytes != rev)
+		return 0;
+	gap_min = rev;
+	for (i = 0; i < side->n; i++)
+	{
+		const dsector_t *s = &side->s[i];
+		int gap = (i + 1 < side->n ? side->s[i + 1].pos : side->s[0].pos + rev) - s->pos;
+
+		if (s->id_crc || s->data_crc || s->density != side->s[0].density || s->c != cyl || s->h != head || s->pos < 0 ||
+		    s->n > 3 || s->n != side->s[0].n || s->len != 128u << s->n)
+			return 0;
+		for (k = 0; k < i; k++)
+			if (side->s[k].r == s->r)
+				return 0;
+		gap_min = gap < gap_min ? gap : gap_min;
+		gap_max = gap > gap_max ? gap : gap_max;
+	}
+	return gap_min > 0 && gap_max - gap_min <= (gap_min + gap_max) / 8;      /* within about 12% of each other */
+}
+
 uint16_t disc_crc(uint16_t crc, const uint8_t *p, size_t n)
 {
 	int i;

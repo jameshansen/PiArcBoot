@@ -62,6 +62,6 @@ zig rc stub.rc stub.res
 zig cc -target x86_64-windows-gnu -O2 -Wall -o ../stub.exe "$HERE/tools/stub.c" stub.res -Wl,--subsystem,windows
 cp "$SDL/bin/SDL2.dll" "$ZLIB/zlib1.dll" "$GUI/build/win/roogui.dll" "$OUT/"
 cp "$GUI/LICENSE" "$OUT/LICENSE-ROOGUI"
-rm -rf "$OUT/icons" "$OUT/presets"
-cp -r "$HERE/ROM311" "$HERE/icon.png" "$HERE/icons" "$HERE/presets" "$HERE/LICENSE" "$OUT/"
+rm -rf "$OUT/icons" "$OUT/presets" "$OUT/shaders"
+cp -r "$HERE/ROM311" "$HERE/icon.png" "$HERE/icons" "$HERE/presets" "$HERE/shaders" "$HERE/LICENSE" "$OUT/"
 echo "built $OUT"

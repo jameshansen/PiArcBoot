@@ -51,14 +51,23 @@ static int fit_w, fit_h;                /* the size the window was last given fo
 static int kept_w, kept_h;              /* and its size before it went full screen */
 static int boxed;                       /* the whole screen is shown, uncropped, for an error box the game has open */
 
+/* The shaders the Shaders menu has, by their presets beside the program */
+static const struct { const char *name, *preset; } shaders[] = {
+	{ "CRT-Royale-Pi", "shaders/crt/crt-royale-pi.glslp" },
+	{ "CRT-Pi", "shaders/crt/crt-pi.glslp" },
+};
+#define NSHADERS (int)(sizeof shaders / sizeof *shaders)
+static settings_t settings;             /* the scale and the shader, the same for every game */
+static int can_shade, shader_on;        /* the renderer is one the shaders run in; the chosen one is loaded and drawing */
+
 #define MENUS 3
 #define SLOTS 3
-#define MAX_ITEMS (MAX_DISCS + 12 + SLOTS * 4)
+#define MAX_ITEMS (MAX_DISCS + 14 + SLOTS * 4 + NSHADERS)
 static const char *const menu_titles[MENUS] = { "Game", "Saves", "Switch Floppy" };
 static int n_menus = MENUS;             /* 2 for a game with one disc: no Switch Floppy */
 enum { CMD_FULLSCREEN = 1, CMD_SCALE, CMD_CLOSE = CMD_SCALE + 4, CMD_SET_SWAP, CMD_CLEAR_SWAPS, CMD_SEND_ESC, CMD_CROP, CMD_DISC,
 	CMD_AUTO = 100, CMD_RESTORE = CMD_AUTO + SLOTS, CMD_SAVE = CMD_RESTORE + SLOTS, CMD_SELECTOR = CMD_SAVE + SLOTS, CMD_SNAPSHOT,
-	CMD_PAUSE };
+	CMD_PAUSE, CMD_SHADER };
 static time_t saved_at[SLOTS];          /* when each slot was last written, or 0 for an empty one */
 static int armed;                       /* Auto Save may write its slot: it was empty, or since the game started it has been restored or saved to, or a slot chosen */
 static int want_save, want_restore;     /* a slot to save to or restore, counting from 1, waiting for the floppy drive to finish */
@@ -280,14 +289,21 @@ static SDL_Rect view(void)
 	return v;
 }
 
-/* The window's size in real pixels for a scale of 1 to 3: the picture, with the menu bar above it */
-static void window_size(int *w, int *h)
+/* The picture's size in real pixels for a scale of 1 to 3 */
+static void picture_size(int scale, int *w, int *h)
 {
 	SDL_Rect v = view();
 	int dw = emu_w > 0 ? v.w : 640, dh = emu_h > 0 ? (emu_dbl ? v.h * 2 : v.h) : 512;
 
-	*w = dw * game.scale / 2 * pic_scale();
-	*h = dh * game.scale / 2 * pic_scale() + bar_px();
+	*w = dw * scale / 2 * pic_scale();
+	*h = dh * scale / 2 * pic_scale();
+}
+
+/* The window's size in real pixels for the menu's scale: the picture, with the menu bar above it */
+static void window_size(int *w, int *h)
+{
+	picture_size(settings.scale, w, h);
+	*h += bar_px();
 }
 
 /* Whether the window is at a size it was dragged to, and not the last one from the menu */
@@ -395,8 +411,8 @@ static void picture_rect(SDL_Rect *r, double *zoom)
 	if (v.w < emu_w || v.h < emu_h)
 	{
 		most = (double)ow / emu_w < (double)oh / fh ? (double)ow / emu_w : (double)oh / fh;
-		if (most < game.scale * pic_scale() / 2.0)
-			most = game.scale * pic_scale() / 2.0;
+		if (most < settings.scale * pic_scale() / 2.0)
+			most = settings.scale * pic_scale() / 2.0;
 		if (r->w > dw * most)
 		{
 			r->w = (int)(dw * most);
@@ -422,7 +438,9 @@ static void picture_rect(SDL_Rect *r, double *zoom)
    texture of its own, and that is then drawn at the window's size with the chip's smoothing.
    Only the screen pixels that straddle 2 of the picture's come out blended, so every pixel
    keeps an even width and flat areas stay crisp, where repeating alone gives narrow and wide
-   columns and smoothing alone blurs everything. */
+   columns and smoothing alone blurs everything.
+
+   With a shader on, the shader draws it instead. */
 static void draw_picture(void)
 {
 	SDL_Rect all = { 0, 0, emu_w, emu_h }, src = view(), dst;
@@ -461,6 +479,21 @@ static void draw_picture(void)
 	picture_rect(&dst, &zoom);
 	if (dst.w < 1 || dst.h < 1)
 		return;
+	if (shader_on)          /* the shader draws the picture at 2x Scale's size, whatever the window's, and that is drawn to fit */
+	{
+		SDL_Texture *t;
+		int sw, sh, drawn = 0;
+
+		picture_size(2, &sw, &sh);
+		t = shader_run(pic, &src, sw, sh, &dst, &drawn);
+		if (drawn)
+			return;
+		if (t)
+		{
+			SDL_RenderCopy(rg_ren, t, NULL, &dst);
+			return;
+		}
+	}
 	SDL_SetTextureScaleMode(pic, SDL_ScaleModeNearest);
 	if (dst.w % src.w == 0 && dst.h % src.h == 0)
 	{
@@ -966,10 +999,32 @@ static void draw_paused(void)
 	rg_text_centre(RG_DESKTOP_BOLD, x, y, bw, bh, 0x000000, "Paused");
 }
 
+/* Loads the shader the settings name, if any, in place of the one before */
+static void start_shader(void)
+{
+	char path[1024], text[160];
+	int i;
+
+	shader_close();
+	shader_on = 0;
+	for (i = 0; can_shade && i < NSHADERS; i++)
+		if (!strcmp(settings.shader, shaders[i].name))
+		{
+			if (!store_asset(shaders[i].preset, path, sizeof path))
+				snprintf(text, sizeof text, "%s is missing from beside the program", shaders[i].name);
+			else if (shader_open(path))
+				snprintf(text, sizeof text, "%s couldn't start on this computer's graphics", shaders[i].name);
+			else
+				shader_on = 1;
+			if (!shader_on)
+				notify(text);
+		}
+}
+
 /* What the menus hold just now, in order. Returns how many items. */
 static int menu_items(menu_item_t *it, int booting)
 {
-	int n = 0, i, slot;
+	int n = 0, i, slot, sub;
 	char when[32];
 
 	memset(it, 0, sizeof(menu_item_t) * MAX_ITEMS);
@@ -980,7 +1035,20 @@ static int menu_items(menu_item_t *it, int booting)
 	ITEM(0, CMD_SEND_ESC, 0, 0, "Send ESC");
 	ITEM(0, CMD_FULLSCREEN, fullscreen, 1, "Fullscreen");
 	for (i = 1; i <= 3; i++)
-		ITEM(0, CMD_SCALE + i, !fullscreen && game.scale == i && !own_size(), 0, "%dx Scale", i);
+	{
+		ITEM(0, CMD_SCALE + i, !fullscreen && settings.scale == i && !own_size(), 0, "%dx Scale", i);
+		it[n - 1].shaded = i == 1 && shader_on;         /* a shader draws at 2x */
+	}
+	ITEM(0, 0, 0, 0, "Shaders");
+	sub = n;
+	ITEM(0, CMD_SHADER, !settings.shader[0], 0, "Off");
+	it[n - 1].sub = sub;
+	for (i = 0; i < NSHADERS; i++)
+	{
+		ITEM(0, CMD_SHADER + 1 + i, !strcmp(settings.shader, shaders[i].name), !i, "%s", shaders[i].name);
+		it[n - 1].sub = sub;
+		it[n - 1].shaded = !can_shade;
+	}
 	ITEM(0, CMD_CROP, crop, 1, "Crop to Window");
 	ITEM(0, CMD_SNAPSHOT, 0, 1, "Save Snapshot");
 	it[n - 1].shaded = booting;
@@ -1057,9 +1125,24 @@ static int menu_command(int cmd)
 	}
 	else if (cmd == CMD_FULLSCREEN)
 		set_fullscreen(!fullscreen);
+	else if (cmd >= CMD_SHADER && cmd <= CMD_SHADER + NSHADERS)
+	{
+		int fitted = !fullscreen && !own_size();
+
+		snprintf(settings.shader, sizeof settings.shader, "%s", cmd > CMD_SHADER ? shaders[cmd - CMD_SHADER - 1].name : "");
+		start_shader();
+		if (shader_on && settings.scale < 2)    /* a window at 1x Scale goes to 2x, the shader's size */
+		{
+			settings.scale = 2;
+			if (fitted)
+				fit_window();
+		}
+		store_save_settings(&settings);
+	}
 	else if (cmd > CMD_SCALE && cmd <= CMD_SCALE + 3)
 	{
-		game.scale = cmd - CMD_SCALE;
+		settings.scale = cmd - CMD_SCALE;
+		store_save_settings(&settings);
 		game.win_w = game.win_h = 0;    /* the window opens at this size next time, not one it was dragged to */
 		set_fullscreen(0);
 		fit_window();
@@ -1404,12 +1487,16 @@ int game_main(const char *id, const char *test_script)
 	char path[1024], cls[160], rom[1024], extrom[1024], hostfs[1024];
 	uint8_t icon[128 * 128 * 4], cmos[256];
 	int booting = 1, script_cs, cs = 0, script_end = -1, settle = -1, modes_at_read = 0, last_check = 0, w, h, quit = 0, i, auto_at = 0;
+	int drive_on = 0;       /* when the floppy drive's motor was last seen turning, from the first read on */
+	int changed = 0, sig_at = 0;    /* the picture differs from the one there at the first read, as last looked at then */
+	uint8_t sig_read[GRID];
 	int held = 0;           /* frames a test has waited with the machine stopped, on the selector or paused, which its script's times count too */
 	Uint32 splash_until = 0;        /* after a slot is picked, the splash stays up till then, SDL_GetTicks's time, and the game waits behind it */
-	int run_for = getenv("PIARCBOOT_RUN_FOR") ? atoi(getenv("PIARCBOOT_RUN_FOR")) : 0, lost = 0, shown_cs = 0;
+	int run_for = getenv("PIARCBOOT_RUN_FOR") ? atoi(getenv("PIARCBOOT_RUN_FOR")) : 0, lost = 0, shown_cs = 0, drawn = 0;
 	menu_item_t items[MAX_ITEMS], bar_items[MAX_ITEMS];
 	int n_items;
 	Uint64 freq, start, began, shown = 0;
+	Uint64 frame_ticks = 0, next_frame;     /* a refresh in performance counter ticks, when the game keeps its own pace, and when its next frame is due */
 	size_t n;
 
 	deploy_installed(id);           /* a game its installer put on HostFS starts from a fresh copy if its own is gone */
@@ -1435,11 +1522,23 @@ int game_main(const char *id, const char *test_script)
 		say_open(cls, icon, test_script);
 		return 1;
 	}
-	if (rg_open(game.title, 320 * game.scale, 256 * game.scale, RG_RESIZABLE, cls, icon))
+	store_settings(&settings);
+	if (settings.shader[0] && settings.scale < 2)
+		settings.scale = 2;
+	/* The renderer works in OpenGL, which the shaders run in: OpenGL ES on a Raspberry Pi, whose
+	   OpenGL is too old for them. SDL_RENDER_DRIVER still has the last word. */
+#if defined(__arm__) || defined(__aarch64__)
+	SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengles2");
+#else
+	SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
+#endif
+	if (rg_open(game.title, 320 * settings.scale, 256 * settings.scale, RG_RESIZABLE, cls, icon))
 	{
 		fprintf(stderr, "piarcboot: %s\n", SDL_GetError());
 		return 1;
 	}
+	can_shade = shader_possible();
+	start_shader();
 	SDL_InitSubSystem(SDL_INIT_AUDIO);      /* a machine with no sound still plays, silently */
 	/* The menu bar is the system's own where it has one to give */
 	n_menus = game.ndiscs > 1 ? MENUS : MENUS - 1;
@@ -1484,6 +1583,8 @@ int game_main(const char *id, const char *test_script)
 	   in place of older ones of the same name, and a folder of the computer's own as HostFS */
 	store_game_path(game.id, "extrom", extrom, sizeof extrom);
 	emu_extrom_dir = is_dir(extrom) ? extrom : NULL;
+	emu_a3000 = game.a3000;
+	machine_real_drive = game.real_drive;
 	emu_hostfs_dir = is_dir(hostfs) ? hostfs : NULL;
 	if (emu_start(rom, cmos, game.fdc))
 	{
@@ -1505,7 +1606,17 @@ int game_main(const char *id, const char *test_script)
 	emu_mute = 1;
 
 	freq = SDL_GetPerformanceFrequency();
-	start = began = SDL_GetPerformanceCounter();
+	start = began = next_frame = SDL_GetPerformanceCounter();
+	/* On a Wayland desktop the compositor puts each frame on the screen whole, at its own refresh,
+	   so the game needn't wait for the refresh itself. Waiting on the compositor is what holds a
+	   Pi 400 to 40 frames a second in full screen. The game keeps the display's pace instead. */
+	if (getenv("WAYLAND_DISPLAY") && !SDL_RenderSetVSync(rg_ren, 0))
+	{
+		SDL_DisplayMode mode;
+		int hz = !SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(rg_win), &mode) && mode.refresh_rate > 0 ? mode.refresh_rate : 60;
+
+		frame_ticks = freq / hz;
+	}
 	while (!quit)
 	{
 		Uint64 frame_start = SDL_GetPerformanceCounter();
@@ -1645,15 +1756,33 @@ int game_main(const char *id, const char *test_script)
 				   either put up a screen of its own since it began to load, or stopped loading,
 				   and for a game cropped to its windows once the cropping has started */
 				if (!modes_at_read && machine_disc_reads)
+				{
 					modes_at_read = machine_mode_sets + 1;
+					drive_on = cs;
+					signature(sig_read);
+				}
+				if (machine_motor_on())
+					drive_on = cs;
+				/* A disc that boots by itself has put up a screen of its own once the picture is no longer
+				   what it was when it began to load, which shows a loading screen as soon as it is drawn.
+				   RISC OS's start-up text, or the screen cleared, isn't one: Starch's loader sets the video
+				   controller up and loads for most of a minute with the start-up text still there. */
+				if (!game.boot[0] && modes_at_read && !changed && cs - sig_at >= 10)
+				{
+					uint8_t now[GRID];
+
+					sig_at = cs;
+					signature(now);
+					changed = sig_diff(now, sig_read) > GRID / 25;
+				}
 				if (booting && !emu_script_busy())
 				{
 					if (script_end < 0)
 						script_end = cs;
 					if (settle < 0 && (game.boot[0] ? app.ready && !emu_script_busy() && (!crop || (crop_from && cs >= crop_from)) :
-							   modes_at_read && (machine_mode_sets >= modes_at_read || !machine_motor_on())))
+							   modes_at_read && changed))
 						settle = cs + 15;
-					if ((settle >= 0 && cs >= settle) || cs > script_end + (game.boot[0] ? (app.mode ? 9000 : 6000) : 3000))
+					if ((settle >= 0 && cs >= settle) || cs > script_end + (game.boot[0] ? (app.mode ? 9000 : 6000) : cs < drive_on + 100 ? 9000 : 3000))
 					{
 						if (test_script)
 							fprintf(stderr, "picture shown at %d cs%s\n", cs, settle < 0 ? " (it never set a mode or stopped loading)" : "");
@@ -1746,7 +1875,7 @@ int game_main(const char *id, const char *test_script)
 				emu_host_modes_at_run = emu_host_errors_at_run = emu_host_tasks_at_run = emu_host_vidc_at_run = -1;
 				machine_disc_reads = machine_mode_sets = 0;
 				booting = emu_mute = 1;
-				cs = last_check = modes_at_read = crop_from = cur_disc = swap_pending = played = 0;
+				cs = last_check = modes_at_read = crop_from = cur_disc = swap_pending = played = drive_on = changed = sig_at = 0;
 				script_end = settle = -1;
 				memset(emu_host_keys, 0, sizeof emu_host_keys);
 				set_capture(0);
@@ -1863,19 +1992,28 @@ int game_main(const char *id, const char *test_script)
 		if (shot)
 			rg_save_shot(shot);
 		SDL_RenderPresent(rg_ren);
+		drawn += !booting && !emu_mute;
+		if (frame_ticks)        /* without vsync: the next frame a refresh after this one's turn */
+		{
+			Uint64 now = SDL_GetPerformanceCounter();
+
+			next_frame += frame_ticks;
+			if (now >= next_frame + frame_ticks)
+				next_frame = now;       /* a frame or more behind: carry on from now */
+			else if (next_frame > now)
+				SDL_Delay((Uint32)((next_frame - now) * 1000 / freq));
+		}
 	}
 
 	if (run_for)            /* PIARCBOOT_RUN_FOR=<seconds>: how well the machine kept up, for measuring a host */
-		fprintf(stderr, "splash %d ms, then %d cs emulated in %d ms with %d cs lost%c", (int)((shown - began) * 1000 / freq),
-			cs - shown_cs, (int)((SDL_GetPerformanceCounter() - shown) * 1000 / freq), lost, 10);
+		fprintf(stderr, "splash %d ms, then %d cs emulated in %d ms with %d cs lost, %d frames drawn%c", (int)((shown - began) * 1000 / freq),
+			cs - shown_cs, (int)((SDL_GetPerformanceCounter() - shown) * 1000 / freq), lost, drawn, 10);
 	set_capture(0);
 	{
 		game_t saved;
 
-		if (!store_load(game.id, &saved) && (saved.scale != game.scale || saved.fullscreen != fullscreen ||
-						     saved.win_w != game.win_w || saved.win_h != game.win_h))
+		if (!store_load(game.id, &saved) && (saved.fullscreen != fullscreen || saved.win_w != game.win_w || saved.win_h != game.win_h))
 		{
-			saved.scale = game.scale;
 			saved.fullscreen = fullscreen;
 			saved.win_w = game.win_w;       /* kept as the game closes, not at each step of a drag */
 			saved.win_h = game.win_h;

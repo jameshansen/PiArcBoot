@@ -30,7 +30,7 @@ void UpdateTimerRegisters_Event(ARMul_State *state,CycleCount time);  /* not sta
 
 void FDCHDC_Poll(ARMul_State *state,CycleCount nowtime)
 {
-  EventQ_RescheduleHead(state,nowtime+250,FDCHDC_Poll); /* TODO - This probably needs to be made realtime */
+  EventQ_RescheduleHead(state,nowtime+FDC_PollCycles(),FDCHDC_Poll); /* TODO - This probably needs to be made realtime */
   FDC_Regular(state);
   HDC_Regular(state);
 }

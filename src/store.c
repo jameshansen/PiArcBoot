@@ -141,7 +141,6 @@ int store_load(const char *id, game_t *g)
 		return -1;
 	memset(g, 0, sizeof *g);
 	snprintf(g->id, sizeof g->id, "%s", id);
-	g->scale = 2;
 	g->crop = -1;
 	g->autosave = 1;
 	for (line = text; line && *line; line = next)
@@ -171,9 +170,10 @@ int store_load(const char *id, game_t *g)
 		else if (!strcmp(line, "jaspp")) g->jaspp = atoi(v);
 		else if (!strcmp(line, "classic")) g->classic = atoi(v);
 		else if (!strcmp(line, "apps")) g->apps = atoi(v);
-		else if (!strcmp(line, "scale")) g->scale = atoi(v) < 1 ? 1 : atoi(v) > 3 ? 3 : atoi(v);
 		else if (!strcmp(line, "fullscreen")) g->fullscreen = atoi(v);
 		else if (!strcmp(line, "capture")) g->nocapture = !atoi(v);
+		else if (!strcmp(line, "speed")) g->a3000 = !strcmp(v, "a3000");
+		else if (!strcmp(line, "drive")) g->real_drive = !strcmp(v, "real");
 		else if (!strcmp(line, "width")) g->win_w = atoi(v) > 0 ? atoi(v) : 0;
 		else if (!strcmp(line, "height")) g->win_h = atoi(v) > 0 ? atoi(v) : 0;
 		else if (!strcmp(line, "desktop")) g->desktop = atoi(v);
@@ -212,8 +212,8 @@ int store_save(const game_t *g)
 	f = fopen(path, "w");
 	if (!f)
 		return -1;
-	fprintf(f, "title=%s\ninfo=%s\nboot=%s\nversion=%s\nsprite=%s\nfdc=%d\njaspp=%d\nclassic=%d\napps=%d\nscale=%d\nfullscreen=%d\ncapture=%d\ndesktop=%d\nmenu=%d\n",
-		g->title, g->info, g->boot, g->version, g->sprite, g->fdc, g->jaspp, g->classic, g->apps, g->scale, g->fullscreen, !g->nocapture,
+	fprintf(f, "title=%s\ninfo=%s\nboot=%s\nversion=%s\nsprite=%s\nfdc=%d\njaspp=%d\nclassic=%d\napps=%d\nfullscreen=%d\ncapture=%d\ndesktop=%d\nmenu=%d\n",
+		g->title, g->info, g->boot, g->version, g->sprite, g->fdc, g->jaspp, g->classic, g->apps, g->fullscreen, !g->nocapture,
 		g->desktop, g->menu);
 	if (g->preset[0])
 		fprintf(f, "preset=%s\n", g->preset);
@@ -221,6 +221,10 @@ int store_save(const game_t *g)
 		fprintf(f, "crop=%d\n", g->crop);
 	if (g->autosave != 1)
 		fprintf(f, "autosave=%d\n", g->autosave);
+	if (g->a3000)
+		fprintf(f, "speed=a3000%c", 10);
+	if (g->real_drive)
+		fprintf(f, "drive=real%c", 10);
 	if (g->win_w > 0 && g->win_h > 0)
 		fprintf(f, "width=%d\nheight=%d\n", g->win_w, g->win_h);
 	for (i = 0; i < g->ndiscs; i++)
@@ -229,6 +233,39 @@ int store_save(const game_t *g)
 		if (g->ro[i])
 			fprintf(f, "readonly=%s\n", g->disc[i]);
 	return fclose(f) ? -1 : 0;
+}
+
+/* settings.ini: scale= and shader= */
+void store_settings(settings_t *s)
+{
+	char path[1024], *text, *line, *next;
+
+	memset(s, 0, sizeof *s);
+	s->scale = 2;
+	snprintf(path, sizeof path, "%s/settings.ini", store_dir());
+	text = (char *)file_read(path, NULL);
+	for (line = text; line && *line; line = next)
+	{
+		next = strchr(line, '\n');
+		if (next)
+			*next++ = 0;
+		line[strcspn(line, "\r")] = 0;
+		if (!strncmp(line, "scale=", 6))
+			s->scale = atoi(line + 6) < 1 ? 1 : atoi(line + 6) > 3 ? 3 : atoi(line + 6);
+		else if (!strncmp(line, "shader=", 7))
+			snprintf(s->shader, sizeof s->shader, "%s", line + 7);
+	}
+	free(text);
+}
+
+void store_save_settings(const settings_t *s)
+{
+	char path[1024], text[96];
+	int n = snprintf(text, sizeof text, "scale=%d\nshader=%s\n", s->scale, s->shader);
+
+	snprintf(path, sizeof path, "%s/settings.ini", store_dir());
+	make_dirs(store_dir());
+	file_write(path, text, (size_t)n);
 }
 
 static int by_title(const void *a, const void *b)
@@ -1173,7 +1210,6 @@ int install_jaspp(const entry_t *e, int desktop, int menu, progress_t *p)
 	snprintf(g.info, sizeof g.info, "%s", e->info);
 	snprintf(g.version, sizeof g.version, "%s", e->version);
 	g.jaspp = 1;
-	g.scale = 2;
 	g.autosave = 1;
 	g.desktop = desktop;
 	g.menu = menu;
@@ -1393,7 +1429,6 @@ static void new_game(game_t *g, const char *file, const char *zip)
 			break;
 		snprintf(g->id + k, sizeof g->id - k, "-%d", i);
 	}
-	g->scale = 2;
 	g->crop = -1;
 	g->autosave = 1;
 }

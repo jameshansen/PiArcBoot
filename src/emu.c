@@ -900,6 +900,14 @@ static bool hostlink_swi(ARMul_State *state, unsigned number)
 
 const char *emu_extrom_dir, *emu_hostfs_dir;
 
+/* A3000 speed: each instruction fetch counts this many cycles of the 25 MHz machine, which with
+   the rest of an instruction's cycles comes to about 4.7 million instructions a second, an 8 MHz
+   ARM2's. Starch's attract mode, timed against a recording of it, runs within 1% over its three
+   minutes, the demos within a third of a second. The timers, video and sound keep machine time,
+   so only the processor slows. */
+#define A3000_FETCH 5
+int emu_a3000;
+
 int emu_start(const char *rom, const uint8_t *cmos_in, int fdc)
 {
 	ARMul_State *state;
@@ -924,6 +932,7 @@ int emu_start(const char *rom, const uint8_t *cmos_in, int fdc)
 	config.sHostFSDirectory = strdup(emu_hostfs_dir ? emu_hostfs_dir : "");	config.bAspectRatioCorrection = true;
 	config.bUpscale = true;
 	ARMul_FixedEmuRate = ARMul_EmuRate = MACHINE_HZ;
+	ARMul_FetchCycles = emu_a3000 ? A3000_FETCH : 1;
 	ARMul_HostSWI = hostlink_swi;
 	c711_start(fdc == 1);
 

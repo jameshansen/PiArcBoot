@@ -66,10 +66,12 @@ Restoring a save puts back anything the game wrote to a floppy too, while files 
 - **Straight into the game.** A game starts with nothing to type or click to get it going.
 - **Every game is its own program**, with its own window, taskbar icon and shortcuts.
 - **Any window size, and full screen**, with the picture kept sharp at every size.
+- **Quick loading.** Games load from their floppies much faster than a real drive manages.
+- **A CRT look.** CRT-Royale-Pi and CRT-Pi in the Shaders menu draw the picture as a monitor of the time showed it, with scanlines and a phosphor mask.
 - **Save states.** Every game gets 3 save slots, each one holding the whole machine as it was at that moment along with a screenshot of it. One slot is saved every 30 seconds of play, and a game with saves opens on all 3 side by side, so you can continue one or start a new game in an empty slot.
 - **Search** across the game lists, and each tab shows how many of its games match.
 - **Disc switching** from the Switch Floppy menu or with Ctrl, Alt and a number, and auto switch points, which change the disc by themselves when a game shows the screen that asks for it.
-- **Your own disc images.** Add Game on the My Games tab turns JFD, ADF, ADL and HFE images, the usual Archimedes disc image formats, or a zip of them, into games, with the discs put in order from their names.
+- **Your own disc images.** Add Game on the My Games tab turns JFD, ADF, ADL and HFE images, the usual Archimedes disc image formats, or a zip of them, into games, with the discs put in order from their names. A game's Settings can run it at A3000 speed, an 8 MHz ARM2 rather than a 25 MHz ARM3, for a game made for the slower machine, or load its floppies at a real drive's speed.
 - **Your own archives.** A zip, Spark or ArcFS archive of RISC OS applications becomes a game too, starting from the application named after the archive, or its biggest.
 - **Hard disc installs.** The games that came with a hard disc installer, such as Black Angel, Carnage Inc and Raw Power, have the files it would copy taken straight off their disc images as they install, or as their discs are added with Add Game, so they start from a folder the machine reads directly with no discs to swap.
 - **Saves are kept** in a file beside each disc image, and the image itself is never changed. Any disc can be made read only.
@@ -155,7 +157,9 @@ Escape never reaches the game. A game that wants it gets it from **Send ESC** at
 
 In full screen there is no menu bar, and Ctrl+Alt+Enter comes back to the window.
 
-Drag the window's edge or maximize it and the picture grows to fill the frame, keeping its shape. A size you drag it to is kept for the next time the game starts, and a size from the Game menu puts the window back to an exact multiple.
+Drag the window's edge or maximize it and the picture grows to fill the frame, keeping its shape. A size you drag it to is kept for the next time the game starts, and a size from the Game menu puts the window back to an exact multiple and opens every game at that size.
+
+**Shaders** in the Game menu draws the picture as a CRT monitor showed it. CRT-Royale-Pi has the scanlines, phosphor mask and glow of a real tube, and CRT-Pi is a lighter scanline and mask shader. A Raspberry Pi 400 keeps up with either. Off draws the picture as it is. The choice holds for every game, and while a shader is on, 1x Scale isn't available.
 
 Each game opens in one window at a time. Starting it again while it's open says so instead of opening a second copy.
 
@@ -266,6 +270,8 @@ The ROM is [ROO311](https://github.com/jameshansen/ROO311), built from the sourc
 
 The launcher and the installer are drawn by [ROOGUI](https://github.com/jameshansen/ROOGUI), with the Window Manager's sprites and the Homerton font from the RISC OS Open sources. Windows, sound and input go through [SDL2](https://www.libsdl.org), and compression through zlib.
 
+CRT-Royale-Pi is made from TroggleMonkey's CRT-Royale, and CRT-Pi is by davej, both from the GLSL versions in [libretro's shader collection](https://github.com/libretro/glsl-shaders).
+
 PiArcBoot's icon is the Archimedes badge, its triangular A in red and yellow on blue, redrawn in code for this project. The Archimedes name and badge were trademarks of Acorn Computers.
 
 ## Licence
@@ -273,3 +279,5 @@ PiArcBoot's icon is the Archimedes badge, its triangular A in red and yellow on 
 PiArcBoot is free software under the GNU General Public License v3.0, in [LICENSE](LICENSE). The floppy disc controllers and the disc image code (`src/wd1772.c`, `src/82c711.c`, `src/disc.c` and `src/disc.h`) are under the GNU General Public License, version 2 or any later version, as each of those files says, with version 2's text in `arcem/COPYING`. ArcEm's files in `arcem/` keep their own notices: ArcEm is under the GNU General Public License, version 2 or any later version, and is used here under version 3. `arcem/COPYING` is the licence ArcEm ships. `src/hostfsmod.h` holds ArcEm's HostFS module, assembled from `arcem/support_modules/hostfs/hostfs.s`.
 
 `ROM311` is ROO311, under the Apache License, version 2.0. It is a separate work that the program loads, and its source is in the ROO311 repository, as is that of its support pack, which Install downloads for the games that need it. The icons in `icons/` are made from each game's own sprite and remain the copyright of the games' publishers. ROOGUI is a separate library under the Apache License, version 2.0, as are the RISC OS Open sprites and font outlines it carries. It ships beside the program as `libroogui.so`, or `roogui.dll` on Windows, with its licence in `LICENSE-ROOGUI`.
+
+The shaders in `shaders/` are under the GNU General Public License, version 2 or any later version, with their own notices, and CRT-Royale's licence text is in `shaders/crt/shaders/crt-royale`. CRT-Royale-Pi is CRT-Royale's passes changed, as each changed file and its preset say.

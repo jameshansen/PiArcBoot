@@ -321,6 +321,9 @@ extern uint32_t ARMul_EmuRate;
    against the host clock. Set it (and ARMul_EmuRate) before ARMul_NewState. */
 extern uint32_t ARMul_FixedEmuRate;
 
+/* PiArcBoot: cycles counted for each instruction fetched, 1 unless a slower processor is wanted */
+extern unsigned ARMul_FetchCycles;
+
 /* When set, called for a SWI in ArcEm's chunk that ArcEm itself doesn't handle, with its number
    within the chunk. Returning true makes the SWI complete as a call to the host, with V clear. */
 extern bool (*ARMul_HostSWI)(ARMul_State *state, unsigned number);

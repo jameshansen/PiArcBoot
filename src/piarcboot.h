@@ -20,6 +20,7 @@ extern int emu_mute;
 extern uint8_t emu_host_keys[512];      /* keys held on the real keyboard, by SDL scancode */
 
 extern const char *emu_extrom_dir;     /* a folder of modules for an extension ROM, read at power on */
+extern int emu_a3000;           /* set before power on: the processor runs at an A3000's speed */
 extern const char *emu_hostfs_dir;     /* the folder HostFS shows the machine */
 int emu_start(const char *rom, const uint8_t *cmos, int fdc);
 void emu_step(void);
@@ -62,6 +63,7 @@ void emu_host_pointer(int x, int y);           /* put the pointer there, in OS u
 
 extern int machine_fixed_time;  /* set before power on: the clock starts at noon on 1 January 1992 and runs with machine time */
 extern int machine_disc_reads;  /* sector reads the floppy controller has been asked for */
+extern int machine_real_drive;  /* the floppy drive keeps a real one's pace on every track, not just unusual ones */
 extern int machine_mode_sets;   /* writes to the VIDC's horizontal cycle register, as setting up a screen mode makes */
 int machine_disc(int drive, const char *path, int write_protect);
 const char *machine_disc_path(int drive);      /* the image in that drive, or NULL */
@@ -100,6 +102,14 @@ int arc_selftest(void);
 /* png.c */
 int png_write(const char *fn, const uint8_t *rgba, int w, int h);
 uint8_t *png_read(const char *fn, int *w, int *h);
+
+/* shader.c: RetroArch's GLSL shader presets, run on the picture in the renderer's OpenGL */
+struct SDL_Texture;
+struct SDL_Rect;
+int shader_possible(void);
+int shader_open(const char *preset);
+void shader_close(void);
+struct SDL_Texture *shader_run(struct SDL_Texture *pic, const struct SDL_Rect *src, int w, int h, const struct SDL_Rect *dst, int *drawn);
 
 /* util.c */
 typedef struct
@@ -155,12 +165,13 @@ typedef struct
 	int jaspp;              /* 1 from the JASPP list, 0 one of the user's own */
 	int classic;            /* 1 from the Classics tab */
 	int apps;               /* 1 made from an archive of applications: it starts as a Classics game does */
-	int scale;              /* window size, 1 to 3 */
 	int fullscreen;
 	int crop;               /* 1 shows just the windows on the screen, 0 all of it, -1 as its presets say */
 	int autosave;           /* the save slot written every 30 seconds of play, 1 to 3, or 0 for none */
 	int nocapture;          /* the mouse isn't captured: the pointer goes where the host's is */
 	int win_w, win_h;       /* the game window's size as the player last dragged it, in pixels, or 0 */
+	int a3000;              /* runs at the speed of an A3000's 8 MHz ARM2, not a 25 MHz ARM3 */
+	int real_drive;         /* its floppy drive loads at a real one's speed */
 	int desktop, menu;      /* has a desktop shortcut, a menu entry */
 	int ndiscs;
 	char disc[MAX_DISCS][40];       /* the disc image files in its folder */
@@ -197,6 +208,15 @@ int store_load(const char *id, game_t *g);
 int store_disc_changed(const game_t *g, int n);
 int disc_clue(const char *name, int *at);      /* the disc a file's name says it is, and where that is said */
 int store_save(const game_t *g);
+
+/* PiArcBoot's own settings, the same for every game */
+typedef struct
+{
+	int scale;              /* the game window's size, 1 to 3 */
+	char shader[40];        /* the shader on the picture, by its name in the menu, or "" for none */
+} settings_t;
+void store_settings(settings_t *s);
+void store_save_settings(const settings_t *s);
 int store_list(game_t **out);
 void store_remove(const game_t *g);
 void store_shortcuts(const game_t *g);

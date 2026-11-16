@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 env:
-  ROOGUI_REF: bef48b528788c7af22a506da2de8f9c107943ac6   # the ROOGUI commit a release is built with
+  ROOGUI_REF: c66857c7da2442c88b4707c9758c15f68d9ecbcb   # the ROOGUI commit a release is built with
   SDL_VERSION: 2.32.10
   ZLIB_VERSION: 1.3.1
   ZIG_VERSION: 0.16.0
@@ -52,7 +52,7 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist/PiArcBoot
-          cp -r build/piarcboot build/libroogui.so build/LICENSE-ROOGUI ROM311 icons presets icon.png LICENSE dist/PiArcBoot/
+          cp -r build/piarcboot build/libroogui.so build/LICENSE-ROOGUI ROM311 icons presets shaders icon.png LICENSE dist/PiArcBoot/
           make build/stub
           python3 tools/mkinstaller.py build/stub dist/PiArcBoot "dist/Install PiArcBoot"
           (cd dist && zip -q "../PiArcBoot-Installer-${{ matrix.name }}.zip" "Install PiArcBoot")

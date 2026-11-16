@@ -98,6 +98,9 @@ bool FDC_IsFloppyInserted(uint_fast8_t drive);
  */
 void FDC_Regular(ARMul_State *state);
 
+/* PiArcBoot: cycles until FDC_Regular wants calling again */
+unsigned FDC_PollCycles(void);
+
 /**
  * FDC_SetLEDsChangeFunc
  *

@@ -64,6 +64,7 @@ uint8_t *disc_changes(const disc_t *d, size_t *len);    /* what <path>.sav would
 void disc_apply(disc_t *d, const uint8_t *sav, size_t len);     /* puts those changes over the disc */
 void disc_set_side(disc_t *d, int cyl, int head, dsector_t *s, int n, int bytes);       /* a side made afresh, as a format does */
 void disc_layout(dside_t *side);                        /* gives the sectors with no place on the track one, and puts them in track order */
+int disc_ordinary(const dside_t *side, int cyl, int head);      /* a side as a format program lays one down, not a copy protection's */
 uint16_t disc_crc(uint16_t crc, const uint8_t *p, size_t n);   /* the CRC the 1772 checks, CCITT, from &FFFF */
 uint16_t disc_id_crc(const dsector_t *s);               /* the CRC of a sector's ID field, address marks included */
 uint16_t disc_data_crc(const uint8_t *d, size_t n, uint8_t mark);       /* the CRC of a data field */

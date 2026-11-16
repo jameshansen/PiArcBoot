@@ -24,6 +24,7 @@
 
 #define ROW_H 92
 #define BTN_W 90
+#define HEADING rg_font(RG_BOLD, 14 * 16)       /* Installed and Available, over the games or their sources */
 #define BTN_H 26                /* an action button, 52 OS units high */
 #define DLG_W 560
 #define BAR_W 20                /* width of the scroll bar */
@@ -76,7 +77,7 @@ static int dlg_kind;
 static int dlg_desktop, dlg_menu;
 static char dlg_choices[40][64];
 static int dlg_nchoices, dlg_choice;
-static int dlg_ro[MAX_DISCS], dlg_changed[MAX_DISCS], dlg_capture;
+static int dlg_ro[MAX_DISCS], dlg_changed[MAX_DISCS], dlg_capture, dlg_a3000, dlg_real_drive;
 static char dlg_image[MAX_DISCS][64];   /* each disk's image format */
 static sprite_t *dlg_sprites;
 static int dlg_nsprites, dlg_sprite;
@@ -237,6 +238,8 @@ static void open_settings(const game_t *g)
 	dlg_game = *g;
 	dlg_desktop = g->desktop;
 	dlg_capture = !g->nocapture;
+	dlg_a3000 = g->a3000;
+	dlg_real_drive = g->real_drive;
 	dlg_menu = g->menu;
 	dlg_scroll = dlg_fitted = 0;
 	for (i = 0; i < g->ndiscs; i++)
@@ -640,6 +643,10 @@ static int draw_about(int x, int y, int w)
 		{ "zlib", "Compression: Jean-loup Gailly and Mark Adler", "zlib License", "https://zlib.net" },
 		{ "GTK 3", "The menu bar on Linux, loaded when a game starts: the GTK team", "GNU Lesser General Public License, "
 		  "version 2.1 or later", "https://www.gtk.org" },
+		{ "CRT-Royale-Pi", "A shader in the Shaders menu, made from CRT-Royale by TroggleMonkey",
+		  "GNU General Public License, version 2 or later", "https://github.com/libretro/glsl-shaders" },
+		{ "CRT-Pi", "A shader in the Shaders menu: davej", "GNU General Public License, version 2 or later",
+		  "https://github.com/libretro/glsl-shaders" },
 		{ "JASPP", "The games, released with their publishers' permission, and the JFD disc image format",
 		  "Each game remains its publisher's", JASPP_URL },
 	};
@@ -702,21 +709,34 @@ static int draw_classics(int x, int y, int w)
 		{ "PackMan", "Games for the RISC OS desktop from ", "PackMan's package sources", "https://packages.riscosopen.org/" },
 	};
 	static char urls[32][300], new_source[300];
-	int top = y, s, i, n;
+	int top = y, s, i, n, pass, any = 0;
 
-	for (s = 0; s < CLASSIC_SECTIONS; s++)
+	for (pass = 0; pass < 2; pass++)        /* the installed games, then the rest, each under the source it came from */
 	{
-		int any = 0, pass, total = 0;
+		int head = 0;
 
-		for (i = 0; i < classic_count(); i++)
-			total += classic_entry(i)->section == s;
-		rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), sections[s].title);
-		y += 26;
-		y += credit(x + 2, y + 4, w - 4, sections[s].lead, sections[s].name, sections[s].url);
-		for (pass = 0; pass < 2; pass++)        /* the section's installed games, then the rest */
+		for (s = 0; s < CLASSIC_SECTIONS; s++)
 		{
-			int head = 0;
+			int sub = 0, total = 0;
 
+			for (i = 0; i < classic_count(); i++)
+				total += classic_entry(i)->section == s;
+			/* an available section whose source's list hasn't come yet says so, under its credit */
+			if (pass && !total && !search[0])
+			{
+				if (!head)
+				{
+					rg_text(HEADING, x + 2, y + 2, rg_colour(7), "Available");
+					y += 34;
+					head = 1;
+				}
+				rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), sections[s].title);
+				y += 26;
+				y += credit(x + 2, y + 4, w - 4, sections[s].lead, sections[s].name, sections[s].url);
+				rg_text(SMALL, x + 2, y + 2, rg_colour(6), "The source's list arrives once the network is reached.");
+				y += 32;
+				continue;
+			}
 			for (i = 0; i < classic_count(); i++)
 			{
 				const classic_t *c = classic_entry(i);
@@ -727,9 +747,19 @@ static int draw_classics(int x, int y, int w)
 					continue;
 				if (!head)
 				{
-					rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), pass ? "Available" : "Installed");
-					y += 30;
+					rg_text(HEADING, x + 2, y + 2, rg_colour(7), pass ? "Available" : "Installed");
+					y += 34;
 					head = 1;
+				}
+				if (!sub)
+				{
+					rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), sections[s].title);
+					y += 26;
+					if (pass)
+						y += credit(x + 2, y + 4, w - 4, sections[s].lead, sections[s].name, sections[s].url);
+					else
+						y += 4;
+					sub = 1;
 				}
 				any = 1;
 				lit = next_row(y);
@@ -748,16 +778,16 @@ static int draw_classics(int x, int y, int w)
 					open_settings(g);
 				y += ROW_H + 8;
 			}
-			if (head)
+			if (sub)
 				y += 4;
 		}
-		if (!any)
-		{
-			rg_text(SMALL, x + 2, y + 2, rg_colour(6), search[0] && total ? "None of its games match the search." :
-				"The sources' lists arrive once the network is reached.");
-			y += 24;
-		}
-		y += 8;
+		if (head)
+			y += 8;
+	}
+	if (!any && search[0])
+	{
+		rg_text(SMALL, x + 2, y + 2, rg_colour(6), "None of the Classics match the search.");
+		y += 32;
 	}
 
 	if (search[0])          /* a search shows the games alone */
@@ -876,8 +906,8 @@ static int draw_list(int vx, int vy, int vw, int vh)
 			any |= games[i].jaspp && matches(games[i].title, games[i].info);
 		if (any)
 		{
-			rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), "Installed");
-			y += 30;
+			rg_text(HEADING, x + 2, y + 2, rg_colour(7), "Installed");
+			y += 34;
 			for (i = 0; i < n_games; i++)
 				if (games[i].jaspp && matches(games[i].title, games[i].info))
 				{
@@ -900,8 +930,8 @@ static int draw_list(int vx, int vy, int vw, int vh)
 				continue;
 			if (any < 2)
 			{
-				rg_text(RG_DESKTOP_BOLD, x + 2, y + 4, rg_colour(7), "Available");
-				y += 30;
+				rg_text(HEADING, x + 2, y + 2, rg_colour(7), "Available");
+				y += 34;
 				any = 2;
 			}
 			lit = next_row(y);
@@ -1057,6 +1087,8 @@ static void draw_disks(int x, int y, int w, int mine)
 	int edit = mine && dlg_game.ndiscs > 1, mode_w = edit ? 160 : 188, i;
 	int cols[4] = { x + 8, x + 78, edit ? x + 166 : x + 238, x + w - (edit ? 84 : 8) - mode_w };
 
+	if (!dlg_game.ndiscs)   /* a game that runs from a folder of its own, as Star Fighter 3000 does, has no table, and no room kept for one */
+		return;
 	rg_text(RG_DESKTOP_BOLD, cols[0], y + 2, rg_colour(7), "Disk");
 	rg_text(RG_DESKTOP_BOLD, cols[1], y + 2, rg_colour(7), "Image");
 	rg_text(RG_DESKTOP_BOLD, cols[2], y + 2, rg_colour(7), "Changes");
@@ -1122,7 +1154,7 @@ static void draw_dialog(int win_w, int win_h)
 	int mine = dlg == DLG_SETTINGS && !dlg_game.jaspp && !dlg_game.classic;
 	int thumbs = dlg_nsprites < MAX_THUMBS ? dlg_nsprites : MAX_THUMBS;
 	int disks = dlg == DLG_SETTINGS && dlg_game.ndiscs ? DISK_TABLE_H(dlg_game.ndiscs) + 8 : 0;
-	int full = (mine ? 264 + (thumbs > 8 ? (thumbs - 1) / 8 * 54 : 0) : dlg == DLG_PROGRESS ? 172 : 160) + disks + (dlg == DLG_SETTINGS ? 30 : 0);
+	int full = (mine ? 324 + (thumbs > 8 ? (thumbs - 1) / 8 * 54 : 0) : dlg == DLG_PROGRESS ? 172 : 160) + disks + (dlg == DLG_SETTINGS ? 30 : 0);
 	int h = full < win_h - 8 ? full : win_h - 8;
 	int w = DLG_W < win_w - 24 ? DLG_W : win_w - 24, cw = w;
 	int x = (win_w - w) / 2, y = (win_h - h) / 2, ok_x, by, cx, cy, i, closed, add = 0, px = rg_in.x, py = rg_in.y;
@@ -1260,7 +1292,9 @@ static void draw_dialog(int win_w, int win_h)
 					dlg_sprite = i;
 			}
 			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 8, 22, "Capture the mouse with a click", &dlg_capture, 1);
-			draw_disks(cx, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 38, cw - 44, 1);
+			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 38, 22, "Run at A3000 speed (8 MHz ARM2)", &dlg_a3000, 1);
+			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 68, 22, "Load floppies at a real drive's speed", &dlg_real_drive, 1);
+			draw_disks(cx, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 98, cw - 44, 1);
 		}
 		else
 		{
@@ -1311,6 +1345,11 @@ static void draw_dialog(int win_w, int win_h)
 				g.desktop = dlg_desktop;
 				g.menu = dlg_menu;
 				g.nocapture = !dlg_capture;
+				if (mine)
+				{
+					g.a3000 = dlg_a3000;
+					g.real_drive = dlg_real_drive;
+				}
 				if (g.ndiscs == dlg_game.ndiscs)        /* the disks in the order the box has them */
 				{
 					for (i = 0; i < g.ndiscs; i++)

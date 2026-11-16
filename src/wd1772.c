@@ -9,6 +9,14 @@
    checks: sectors that read with CRC errors, IDs in an order of their own, sizes that differ,
    the time from one sector to the next, and tracks past 79.
 
+   Unless machine_real_drive is set, the drive is quicker than that where it can be without a
+   program telling: it spins up, steps and settles in a tenth of a millisecond, and on an ordinary
+   track, the kind a format program lays down, the sector a read asks for is under the head at once
+   and each of its bytes comes 4 us after the last one was taken, or a real byte's time after it
+   arrived if it wasn't. The program still gets a gap between bytes for its other interrupts. Any
+   other track, Read Address, Read Track and every write keep a real drive's timing, as copy
+   protection works through those.
+
    The 1772's interrupt and data request lines go to the IOC's fast interrupt inputs FH1 and
    FH0. Printer latch A selects the drive (bits 0 to 3, low for selected) and the side (bit 4,
    high for side 0); latch B selects the density (bit 1, high for single) and holds the 1772 in
@@ -31,6 +39,8 @@
 #define REV ((uint64_t)MACHINE_HZ / 5)          /* a revolution at 300 rpm */
 #define MS ((uint64_t)MACHINE_HZ / 1000)
 #define INDEX_PULSE (2 * MS)                    /* how long the index line stays active */
+#define FAST_STEP (MS / 10)                     /* a step, a settle or the spin-up, when the drive needn't keep a real one's pace */
+#define FAST_GAP ((uint64_t)MACHINE_HZ / 250000)  /* 4 us from a byte being taken to the next, in a fast read */
 #define NEVER UINT64_MAX
 
 /* Status bits */
@@ -78,6 +88,8 @@ static struct
 drive_t floppy[4];
 
 int machine_disc_reads;
+int machine_real_drive;
+static int fast;                        /* the read under way is on an ordinary track: its bytes come as soon as they are taken */
 static int tracing = -1;                /* PIARCBOOT_FDC: each command and how it ended, on stderr */
 
 static uint64_t now_cycles(void)
@@ -157,6 +169,12 @@ static int next_id(dside_t *side, uint64_t t, uint64_t *start)
 	return -1;
 }
 
+/* How long a step, the head settling or the spin-up takes */
+static uint64_t step_time(uint64_t real)
+{
+	return machine_real_drive ? real : FAST_STEP;
+}
+
 static void lines(void)
 {
 	ARMul_State *state = &statestr;
@@ -200,6 +218,7 @@ static void finish(uint64_t t)
 	F.phase = P_IDLE;
 	F.intrq = 1;
 	F.motor_off = spinning() ? next_index(t) + 8 * REV : NEVER;
+	fast = 0;
 	lines();
 }
 
@@ -214,6 +233,7 @@ static void start_search(uint64_t t, int revs)
 {
 	F.phase = F.cmd < 0x80 ? P_VERIFY : F.cmd >= 0xc0 ? P_RA : P_SEARCH;
 	F.crc_seen = 0;
+	fast = 0;
 	F.deadline = spinning() ? next_index(t) + (uint64_t)(revs - 1) * REV : NEVER;
 	F.when = t;
 }
@@ -248,7 +268,7 @@ static void begin(uint64_t t)
 		}
 	}
 	F.phase = P_SETTLE;
-	F.when = c & 0x04 ? t + 15 * MS : t;    /* E: 15 ms for the head to settle (30 on the 1770) */
+	F.when = c & 0x04 ? t + step_time(15 * MS) : t;        /* E: 15 ms for the head to settle (30 on the 1770) */
 }
 
 static void command(uint8_t c, uint64_t t)
@@ -268,6 +288,7 @@ static void command(uint8_t c, uint64_t t)
 			F.busy = 0;
 			F.phase = P_IDLE;
 			F.motor_off = spinning() ? next_index(t) + 8 * REV : NEVER;
+			fast = 0;
 		}
 		else
 			F.type1 = 1;
@@ -299,7 +320,7 @@ static void command(uint8_t c, uint64_t t)
 		{
 			F.spun = 0;
 			F.phase = P_SPINUP;
-			F.when = spinning() ? next_index(t) + 5 * REV : NEVER;
+			F.when = spinning() ? (machine_real_drive ? next_index(t) + 5 * REV : t + FAST_STEP) : NEVER;
 			return;
 		}
 	}
@@ -411,7 +432,7 @@ static void act(void)
 				if (F.restore)
 					F.track = 0;
 				if (F.cmd & 0x04)       /* V: 15 ms to settle, then an ID to verify the track */
-					start_search(t + 15 * MS, 5);
+					start_search(t + step_time(15 * MS), 5);
 				else
 				{
 					F.phase = P_END;
@@ -430,7 +451,7 @@ static void act(void)
 			if (!F.single || F.cmd & 0x10)
 				F.track = (uint8_t)(F.track + F.dir);
 			F.k++;
-			F.when = t + step_rate_ms() * MS;
+			F.when = t + step_time(step_rate_ms() * MS);
 			break;
 		}
 
@@ -451,6 +472,30 @@ static void act(void)
 		case P_SEARCH:                  /* the ID with the track and sector registers' numbers */
 		case P_RA:                      /* any ID */
 		side = cur_side();
+		if (!machine_real_drive && F.phase != P_RA && spinning() && disc_ordinary(side, d->cyl, side_sel()) && readable(&side->s[0]))
+		{
+			/* an ordinary track: the ID wanted is under the head now */
+			for (i = 0; i < side->n && (side->s[i].c != F.track || (F.phase == P_SEARCH && side->s[i].r != F.sector)); i++)
+				;
+			if (i < side->n && F.phase == P_VERIFY)
+			{
+				F.phase = P_END;
+				F.when = t + FAST_STEP;
+				return;
+			}
+			if (i < side->n && (F.cmd & 0xe0) == 0x80)
+			{
+				F.side = side;
+				F.si = i;
+				F.base = t;
+				F.k = 0;
+				F.len = 128 << (side->s[i].n & 3);
+				fast = 1;
+				F.phase = P_READ;
+				F.when = t + FAST_GAP;
+				return;
+			}
+		}
 		for (;;)
 		{
 			i = next_id(side, t, &start);
@@ -525,11 +570,11 @@ static void act(void)
 		set_drq(F.k < (int)s->len ? s->data[F.k] : 0);
 		bc = byte_time(F.side);
 		if (++F.k < F.len)
-			F.when = F.base + (46 + F.k) * bc;
+			F.when = fast ? t + bc : F.base + (46 + F.k) * bc;     /* fast: sooner, once this one is taken */
 		else
 		{
 			F.phase = P_READ_CRC;
-			F.when = F.base + (46 + F.len + 1) * bc;
+			F.when = fast ? t + bc : F.base + (46 + F.len + 1) * bc;
 		}
 		break;
 
@@ -809,9 +854,17 @@ uint_fast8_t FDC_Read(ARMul_State *state, uint_fast16_t offset)
 		{
 			F.drq = 0;
 			lines();
+			if (fast && F.when > now_cycles() + FAST_GAP)  /* the next byte comes soon after */
+				F.when = now_cycles() + FAST_GAP;
 		}
 		return F.data;
 	}
+}
+
+/* Cycles until the controllers next want to be brought up to date: often during a fast read */
+unsigned FDC_PollCycles(void)
+{
+	return fast || (c711_on && c711_fast()) ? 50 : 250;
 }
 
 void FDC_Write(ARMul_State *state, uint_fast16_t offset, uint_fast8_t data)
@@ -1095,6 +1148,7 @@ void fdc_snap(snap_t *s)
 		F.buf = buf;
 		F.buflen = buflen;
 		F.side = NULL;
+		fast = 0;
 	}
 	for (i = 0; i < 4; i++)
 		drive_snap(s, &floppy[i]);

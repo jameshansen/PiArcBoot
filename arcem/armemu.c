@@ -37,6 +37,11 @@ typedef struct {
 
 static const PipelineEntry abortpipe;
 
+/* PiArcBoot: the cycles an instruction fetch counts, 1 for an ARM3 running from its cache, more
+   for a slower processor such as the A3000's 8 MHz ARM2, which does less in a second of machine
+   time while the timers, video and sound keep theirs */
+unsigned ARMul_FetchCycles = 1;
+
 static ARMEmuFunc ARMul_Emulate_DecodeInstr(ARMword instr);
 
 /***************************************************************************\
@@ -47,7 +52,7 @@ ARMul_LoadInstr(ARMul_State *state,ARMword addr, PipelineEntry *p)
 {
   FastMapEntry *entry;
   FastMapRes res;
-  state->NumCycles++;
+  state->NumCycles += ARMul_FetchCycles;
   addr &= 0x3fffffc;
 
   ARMul_CLEARABORT;
@@ -111,7 +116,7 @@ ARMul_LoadInstrTriplet(ARMul_State *state,ARMword addr,PipelineEntry *p)
     return;
   }
 
-  state->NumCycles += 3;
+  state->NumCycles += 3 * ARMul_FetchCycles;
   addr &= 0x3fffffc;
 
   ARMul_CLEARABORT;
@@ -147,7 +152,7 @@ ARMul_LoadInstrTriplet(ARMul_State *state,ARMword addr,PipelineEntry *p)
   {
     /* We would use the function here... except calling the function may alter the mapping (e.g. during first remapped ROM read following a reset)
        So instead we'll just fall back to calling LoadInstr 3 times, since this isn't a very common case anyway */
-    state->NumCycles -= 3;
+    state->NumCycles -= 3 * ARMul_FetchCycles;
     ARMul_LoadInstr(state,addr,p);
     ARMul_LoadInstr(state,addr+4,p+1);
     ARMul_LoadInstr(state,addr+8,p+2);    

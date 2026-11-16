@@ -16,6 +16,10 @@
    a search gives up after two index pulses, and a byte not taken by the time the next arrives
    is an overrun.
 
+   As with the 1772, unless machine_real_drive is set the heads step in a tenth of a millisecond,
+   and a read on an ordinary track finds its sector at once and gives each byte 4 us after the
+   last was taken. Other tracks, Read ID, writes and formats keep a real drive's timing.
+
    Free software under the GNU General Public License, version 2 or (at your option) any later
    version. */
 #include <stdio.h>
@@ -33,6 +37,8 @@
 #define REV ((uint64_t)MACHINE_HZ / 5)          /* a revolution at 300 rpm */
 #define US ((uint64_t)MACHINE_HZ / 1000000)
 #define NEVER UINT64_MAX
+#define FAST_STEP ((uint64_t)MACHINE_HZ / 10000)        /* a step, when the drive needn't keep a real one's pace */
+#define FAST_GAP (4 * US)                               /* from a byte being taken to the next, in a fast read */
 
 #define PORTS 0x03010000u                       /* port 0 */
 #define DACK 0x2000u                            /* from PORTS: a DMA byte */
@@ -67,6 +73,7 @@
 enum { X_NONE, X_SEARCH, X_READ_ID, X_READ, X_READ_END, X_WRITE, X_FORMAT_WAIT, X_FORMAT, X_NEXT, X_END };
 
 int c711_on;
+static int fast;                        /* the read under way is on an ordinary track: its bytes come as soon as they are taken */
 
 static struct
 {
@@ -209,6 +216,7 @@ static void result(int n, int irq)
 	K.exec = X_NONE;
 	K.irq = irq;
 	K.drq = 0;
+	fast = 0;
 	lines();
 }
 
@@ -222,6 +230,7 @@ static void search(uint64_t t)
 {
 	K.exec = (K.cmd[0] & 0x1f) == 0x0a ? X_READ_ID : X_SEARCH;
 	K.id_seen = 0;
+	fast = 0;
 	K.deadline = spinning() ? next_index(t) + REV : NEVER;  /* two index pulses */
 	K.when = t;
 }
@@ -272,6 +281,26 @@ static void act(void)
 			dside_t *side = cur_side();
 			int dens = density();
 
+			if (!machine_real_drive && K.exec == X_SEARCH && ((K.cmd[0] & 0x1f) == 0x06 || (K.cmd[0] & 0x1f) == 0x0c) && spinning() &&
+			    side && dens == side->s[0].density && disc_ordinary(side, d->cyl, head()))
+			{
+				/* an ordinary track: the sector wanted is under the head now */
+				for (i = 0; i < side->n && (side->s[i].c != K.c || side->s[i].h != K.h || side->s[i].r != K.r || side->s[i].n != K.n); i++)
+					;
+				if (i < side->n)
+				{
+					K.id_seen = 1;
+					K.side = side;
+					K.si = i;
+					K.base = t;
+					K.k = 0;
+					K.len = 128 << K.n;
+					fast = 1;
+					K.exec = X_READ;
+					K.when = t + FAST_GAP;
+					return;
+				}
+			}
 			for (;;)
 			{
 				i = side && dens ? next_id(side, dens, t, &start) : -1;
@@ -343,18 +372,18 @@ static void act(void)
 		if (K.tc)                       /* the transfer is over: the rest of the sector goes by */
 		{
 			K.exec = X_READ_END;
-			K.when = K.base + (46 + K.len + 2) * bc;
+			K.when = fast ? t + bc : K.base + (46 + K.len + 2) * bc;
 			break;
 		}
 		K.data = K.k < (int)s->len ? s->data[K.k] : 0;
 		K.drq = 1;
 		lines();
 		if (++K.k < K.len)
-			K.when = K.base + (46 + K.k) * bc;
+			K.when = fast ? t + bc : K.base + (46 + K.k) * bc;     /* fast: sooner, once this one is taken */
 		else
 		{
 			K.exec = X_READ_END;
-			K.when = K.base + (46 + K.len + 2) * bc;
+			K.when = fast ? t + bc : K.base + (46 + K.len + 2) * bc;
 		}
 		break;
 
@@ -490,7 +519,7 @@ static void step(int i)
 		pend((uint8_t)(ST0_SE | K.seek_head[i] << 2 | i), (uint8_t)d->cyl);
 		return;
 	}
-	K.seek_when[i] += (16 - K.srt) * rate_us[K.ccr & 3] * US;
+	K.seek_when[i] += machine_real_drive ? (16 - K.srt) * rate_us[K.ccr & 3] * US : FAST_STEP;
 }
 
 static void catch_up(void)
@@ -672,7 +701,7 @@ static void dor_write(uint8_t v)
 	{
 		K.ncmd = K.nres = K.npending = 0;
 		K.exec = X_NONE;
-		K.irq = K.drq = 0;
+		K.irq = K.drq = fast = 0;
 		for (i = 0; i < 4; i++)
 			K.seek_to[i] = -1;
 	}
@@ -691,6 +720,8 @@ static uint8_t dma_read(int tc)
 	{
 		K.drq = 0;
 		lines();
+		if (fast && K.when > machine_clock() + FAST_GAP)       /* the next byte comes soon after */
+			K.when = machine_clock() + FAST_GAP;
 	}
 	if (tc && K.exec)
 		K.tc = 1;
@@ -866,6 +897,11 @@ void c711_regular(void)
 	catch_up();
 }
 
+int c711_fast(void)
+{
+	return fast;
+}
+
 int c711_motor(void)
 {
 	return (K.dor & 0xf0) != 0;
@@ -882,5 +918,8 @@ void c711_snap(snap_t *s)
 {
 	SNAP(s, K);
 	if (!s->saving)
+	{
 		K.side = NULL;
+		fast = 0;
+	}
 }

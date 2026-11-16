@@ -24,6 +24,7 @@ extern int c711_on;
 void c711_start(int on);                /* before power on: whether the machine has them */
 void c711_regular(void);
 int c711_motor(void);
+int c711_fast(void);                    /* a read is under way at more than a real drive's pace */
 int c711_idle(void);
 void c711_snap(struct snap_s *s);
 
