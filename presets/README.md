@@ -18,9 +18,11 @@ A line each, with `#` starting a comment line:
 
 ```
 copy <disc> <from> <to>
+join <disc> <from> <to>
+folder <to>
 ```
 
-`<disc>` is the game's disc number, from 1. `<from>` is a folder or a file on that disc, as RISC OS writes it from the disc's root, `$`, with `#` for any one character such as a hard space, and without regard to case. A folder copies with everything in it, and `$` alone is the whole disc. `<to>` is where it goes from HostFS's root, `$`, named as the installer named it, and it runs to the end of the line. The lines go in order and a later copy takes the place of an earlier file of the same name, as when an installer copies the same folder from two discs.
+`<disc>` is the game's disc number, from 1. `<from>` is a folder or a file on that disc, as RISC OS writes it from the disc's root, `$`, with `#` for any one character such as a hard space, and without regard to case. A folder copies with everything in it, and `$` alone is the whole disc. `<to>` is where it goes from HostFS's root, `$`, named as the installer named it, and it runs to the end of the line. The lines go in order and a later copy takes the place of an earlier file of the same name, as when an installer copies the same folder from two discs. `join` puts the file `<from>` on the end of the file `<to>` copied before it, for a file an installer joins from parts on two discs, and `folder` makes an empty folder, for one the installer makes for the game's own saves.
 
 `piarcboot ls <image>` lists every file on a disc image with its length and load and execution addresses, and `tests/installers.sh` runs each game's real installer in the emulator, worked by a script in `tests/installers/`, to check its list against what the installer copies, or to see what a new one copies.
 
@@ -33,10 +35,11 @@ copy <disc> <from> <to>
 | `support=<pack>` | Installs the game in a folder that HostFS shows the machine, with ROO311's support pack of that name beside it (`toolbox`), rather than on floppy images |
 | `keys=<keys>` | Presses these keys a second after the game has started, behind the splash screen, for a choice the game doesn't keep from one time to the next. For a game that plays in the desktop they come once it has loaded and before its icon is clicked, to answer a question it asks first. The names are those of the scripts (`esc`, `enter`, `space`, a letter) |
 | `mode=<number>` | Starts the desktop in this screen mode, for a game that plays in the desktop and asks for a mode, such as `15` for 640 by 256 in 256 colours. Its icon is clicked for it once it has had 2 seconds to set itself up and its floppy drive has been still for 1, and a change of mode for its loading screen isn't taken as the game taking over the screen |
-| `crop=1` | Shows the game cropped to its windows (Crop to Window in the Game menu), for a game that plays in a desktop window. A choice made in the menu takes its place. With no `mode=`, the desktop is 640 by 512 in 256 colours, mode 21, as the Classics' is, and the game is treated as one that plays in the desktop, as `mode=` does |
+| `crop=1` | Shows the game cropped to its windows (Crop to Desktop Window in the Settings menu), for a game that plays in a desktop window. A choice made in the menu takes its place. With no `mode=`, the desktop is 640 by 512 in 256 colours, mode 21, as the Classics' is, and the game is treated as one that plays in the desktop, as `mode=` does |
 | `click=0` | Leaves a game that starts as a task in the desktop waiting there, with its icon on the icon bar unclicked, for a game that wants something else first. It is shown as soon as its icon is up |
 | `match=<names>` | Gives disc images added with Add Game this game's copy list and its other settings when the root of their first disc holds all these names, with `#` for any one character. The game's `game.ini` then says `preset=<game>` |
 | `skip=<why>` | Leaves a PackMan game out of the Classics tab, for a package that looks as if it should run on RISC OS 3.11 and doesn't |
+| `apps=<folder>` | Installs the applications in this folder of a JASPP game's package (`Apps/Games/`) in a folder that HostFS shows the machine, as a Classics game's can, with the game's preset files laid over them, and puts the package's disc images in the drive. For Xenon 2, whose package holds its first disc only as its application, beside the image of its copy protected second disc |
 
 ## The presets
 

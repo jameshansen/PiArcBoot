@@ -1,0 +1,24 @@
+# What Alone in the Dark's installer copies, as its !Installer.Actions says: the game from disc 1,
+# with !RunGame as its !Run, an empty Save folder, and the Data folder of every disc. Two files are
+# split across discs and joined: ListSamp from discs 2 and 4, and Camera05 from discs 3 and 4.
+copy 1 $.!Alone.!Boot $.!Alone.!Boot
+copy 1 $.!Alone.!RunGame $.!Alone.!Run
+copy 1 $.!Alone.!Sprites $.!Alone.!Sprites
+copy 1 $.!Alone.!RunImage $.!Alone.!RunImage
+copy 1 $.!Alone.!Run_AITD $.!Alone.!Run_AITD
+copy 1 $.!Alone.VoxLib $.!Alone.VoxLib
+copy 1 $.!Alone.Data $.!Alone.Data
+folder $.!Alone.Save
+copy 2 $.Data.Lists_1 $.!Alone.Data.ListSamp
+copy 2 $.Data.Priority $.!Alone.Data.Priority
+copy 2 $.Data.Vars/ITD $.!Alone.Data.Vars/ITD
+copy 3 $.Data.cam5_1 $.!Alone.Data.Camera05
+copy 3 $.Data.Defines $.!Alone.Data.Defines
+copy 3 $.Data.Etage00 $.!Alone.Data.Etage00
+join 4 $.Data.Lists_2 $.!Alone.Data.ListSamp
+join 4 $.Data.cam5_2 $.!Alone.Data.Camera05
+copy 4 $.Data.Camera03 $.!Alone.Data.Camera03
+copy 5 $.Data $.!Alone.Data
+copy 6 $.Data $.!Alone.Data
+copy 7 $.Data $.!Alone.Data
+copy 8 $.Data $.!Alone.Data

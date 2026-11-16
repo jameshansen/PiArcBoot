@@ -41,7 +41,7 @@ This is a passion project, making some of these old favourites easy to pick up a
 
 ## Games
 
-PiArcBoot lists 113 JASPP games and 16 Classics, including:
+PiArcBoot lists 120 JASPP games and 16 Classics, including:
 
 - **JASPP**: Lemmings, Lemmings 2: The Tribes, Gods, Magic Pockets, Cannon Fodder, SpeedBall 2, Sensible Soccer, Chocks Away, Lotus Turbo Challenge 2, Populous, SimCity, James Pond, Fire & Ice, Chuck Rock and Pac-mania
 - **Classics**: Elite, Star Fighter 3000, Asylum and Oddball.
@@ -89,13 +89,13 @@ Restoring a save puts back anything the game wrote to a floppy too, while files 
 
 Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 26.04), a Raspberry Pi 400 with 64-bit Raspberry Pi OS 13, and Windows 10.
 
-- The 110 games that take over the screen boot from their first disc to their own screens within 65 seconds, whether a title, a demo, a menu or a request for their next disc, Botkiller 2 and the Risc PC version of Speedball 2 from their 1.6MB discs
+- The 117 games that take over the screen reach their own screens within 65 seconds, whether a title, a demo, a menu or a request for their next disc, Botkiller 2 and the Risc PC version of Speedball 2 from their 1.6MB discs
 - The games' disc checks pass, among them Hero Quest's, Fire and Ice's and Blaston's, and what Jet Fighter writes to its boot disc is kept
 - Blank discs format, take files and read back after a fresh power on
 - The 4 Acorn Arcade games and 12 PackMan games in Classics install and start, Star Fighter 3000 and Meteors full screen
 - Elite reaches its title 8 seconds after power on, where loading at a real drive's speed takes 39
 - Mah-Jong Patience, Premier Manager and SimCity, which play in the RISC OS desktop, start in their windows and are shown cropped to them, as Haunted House is
-- The 9 games with a hard disc installer install onto a folder the machine reads directly and start from there: Black Angel, Break 147 & Superpool, Carnage Inc, Drop Ship, The Exotic Adventures of Sylvia Layne, Haunted House, Raw Power, Saloon Cars Deluxe and Stunt Racer 2000
+- The 10 games with a hard disc installer install onto a folder the machine reads directly and start from there: Alone in the Dark, Black Angel, Break 147 & Superpool, Carnage Inc, Drop Ship, The Exotic Adventures of Sylvia Layne, Haunted House, Raw Power, Saloon Cars Deluxe and Stunt Racer 2000
 - On the Pi 400 the emulated machine can run about 2.5 times faster than a real one, and Lemmings holds full speed in a window and full screen
 
 ### Not yet
@@ -200,7 +200,9 @@ An archive added with Add Game is laid out the same way. Spark and ArcFS archive
 
 A game that needs more than RISC OS 3.11 had, Star Fighter 3000 so far, gets [ROO311's support pack](https://github.com/jameshansen/ROO311#support-pack), mirrored in `distributable-games/support-packs`. Its nested Window Manager goes in an extension ROM with ArcEm's HostFS module, and RISC OS takes both up at power on, the Window Manager in place of the ROM's own, since it can't be replaced once the desktop has started. The game goes in a folder that HostFS shows the machine, with the pack's `!System` of Toolbox modules and its `!Scrap`, which HostLink boots before it runs the game.
 
-The hard disc installers of the games that came with one copy files from the game's discs and nothing more, some folders renamed and a later disc's files merged into the first's. A list in `presets/` says which, and Install copies them straight from the disc images into the folder HostFS shows the machine. `src/adfs.c` reads the discs: D format, with the old map, and E format, with the new map, where each file is one or more fragments of the map, and access bits that would stop a file being read are ignored. A copy of the folder is kept as `installed/` beside it, and the game starts from the folder through HostLink, as a support pack game does, with a fresh copy put back from `installed/` whenever the folder is missing. Disc images added with Add Game get the same, when the root of their first disc names the same applications as a game with a list. Each list was taken from what the real installer copies, and `tests/installers.sh` checks it still matches. It runs the installer in the emulator, worked by a script in `tests/installers/` that clicks in its window, types `HostFS:$` as the place to install to, and puts in each disc it asks for.
+The hard disc installers of the games that came with one copy files from the game's discs and nothing more, some folders renamed, a later disc's files merged into the first's, and for Alone in the Dark two files joined from the parts on two discs. A list in `presets/` says which, and Install copies them straight from the disc images into the folder HostFS shows the machine. `src/adfs.c` reads the discs: D format, with the old map, and E format, with the new map, where each file is one or more fragments of the map, and access bits that would stop a file being read are ignored. A copy of the folder is kept as `installed/` beside it, and the game starts from the folder through HostLink, as a support pack game does, with a fresh copy put back from `installed/` whenever the folder is missing. Disc images added with Add Game get the same, when the root of their first disc names the same applications as a game with a list. Each list was taken from what the real installer copies, and `tests/installers.sh` checks it still matches. Alone in the Dark's is taken from the steps its installer reads from a file on its first disc. It runs the installer in the emulator, worked by a script in `tests/installers/` that clicks in its window, types `HostFS:$` as the place to install to, and puts in each disc it asks for.
+
+Xenon 2's package holds its first disc only as its application, beside the image of its copy protected second disc, so Install puts the application in the folder HostFS shows the machine, as the game's help says to install it on a hard disc, with a `!Run` of PiArcBoot's in place of the package's, and the second disc goes in the drive.
 
 What PiArcBoot knows about particular games is in `presets/`, not its code. A game can have files that Install adds to its own, such as the choices file that starts Star Fighter 3000 full screen where it would otherwise open in a desktop window, the files its hard disc installer copies, and settings: the support pack it needs, keys to press once it has started (Escape puts Meteors on the whole screen), the screen mode for a game that plays in the desktop (MODE 15 for Black Angel), or why a PackMan game is left out. `presets/README.md` describes them.
 

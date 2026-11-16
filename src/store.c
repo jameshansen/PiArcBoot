@@ -1115,6 +1115,8 @@ static int from_package(const entry_t *e, const char *part, int *have, progress_
 		free(data);
 	}
 	free(list);
+	if (got > 0 && install_package_apps(e->id, e->title, zip, len, part, p))
+		got = -1;
 	free(zip);
 	snprintf(path, sizeof path, "%s/package.zip", part);
 	unlink(path);

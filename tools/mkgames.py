@@ -24,10 +24,10 @@ def preset(gid, key):
 
 def notes(gid, fdc=0, support=False):
     n = []
-    if os.path.exists(os.path.join(HERE, "presets", gid + ".install")):
+    if os.path.exists(os.path.join(HERE, "presets", gid + ".install")) or preset(gid, "apps"):
         n.append("Hard disc install")
     if preset(gid, "crop") == "1":
-        n.append("Crop to Window")
+        n.append("Crop to Desktop Window")
     if fdc == "1":
         n.append("1.6MB disc")
     if support or preset(gid, "support"):
@@ -51,7 +51,7 @@ lines = ["# Games", "",
          "downloads each one, and an installed game plays offline." % (len(jaspp), len(classics)), "",
          "- **Hard disc install**: its installer's files are copied onto a folder the machine reads directly, so it "
          "starts with no discs to swap.",
-         "- **Crop to Window**: it plays in the RISC OS desktop and is shown cropped to its windows.",
+         "- **Crop to Desktop Window**: it plays in the RISC OS desktop and is shown cropped to its windows.",
          "- **Support pack**: it installs with ROO311's support pack, the newer Window Manager and the Toolbox it "
          "needs.",
          "- **1.6MB disc**: its disc is a high density one, so the machine becomes an A5000 to read it.", "",

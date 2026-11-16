@@ -1,0 +1,7 @@
+| Xenon 2, run from its folder with disc 2 in the drive, in place of the package's !Run, which
+| boots its first disc's image through ADFFS
+Set Xenon2$Dir <Obey$Dir>
+Set Disc2$Dir <Obey$Dir>.Levels
+| the music player the game calls
+RMLoad <Xenon2$Dir>.PlayMod
+Run <Xenon2$Dir>.X2load

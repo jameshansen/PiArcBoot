@@ -48,7 +48,7 @@ static int pic_w, pic_h, big_w, big_h;
 static int fullscreen, captured, told_capture;
 static int crop, crop_fitted;           /* just the windows on the screen are shown; the window has been fitted to them */
 static Uint32 refit_at;                 /* when the window takes the shape the windows have kept for a second, or 0 */
-static struct { int polls, polled_at, away_from, modes, mode, had_window, had_screen, bare_from; } left;   /* for telling the game has quit to the desktop */
+static struct { int begun, shown_at, polls, polled_at, away_from, modes, mode, had_window, had_screen, bare_from; } left;   /* for telling the game has quit to the desktop */
 static int crop_from, now_cs;           /* the centisecond cropping starts, a second after the game is going; the machine's now */
 static int native_bar;                  /* the window has a menu bar of the system's own making */
 static int fit_w, fit_h;                /* the size the window was last given for a size in the menu */
@@ -1082,13 +1082,19 @@ static void pick_disc(void)
    windows are open there, as RISC OS opens the disc's folder when Lemmings goes back to it. A game
    that plays in the desktop has quit once its windows have closed with the screen in the same mode,
    even with its icon left on the icon bar. Either way it has to last 3 seconds with no error box
-   open and the floppy drive still. */
+   open and the floppy drive still, from 10 seconds or more after the game was shown, as a disc that
+   fails to boot reaches the desktop sooner and may open and close a box of the desktop's there. */
 static int game_left(int cs)
 {
 	int live, bare, wins = 0, sh = emu_h * (emu_dbl ? 4 : 2), i;
 
 	for (i = 0; i < emu_host_nwins; i++)    /* a window moved wholly off the screen is hidden, as view() has it */
 		wins += emu_host_wins[i][2] > 0 && emu_host_wins[i][0] < 1280 && emu_host_wins[i][3] > 0 && emu_host_wins[i][1] < sh;
+	if (!left.begun)
+	{
+		left.begun = 1;
+		left.shown_at = left.away_from = left.bare_from = cs;
+	}
 	if (emu_host_polls != left.polls)
 	{
 		left.polls = emu_host_polls;
@@ -1110,7 +1116,7 @@ static int game_left(int cs)
 	bare = live && !emu_host_error_open && !machine_motor_on() && (left.had_screen || (!wins && emu_host_mode == left.mode));
 	if (!bare)
 		left.bare_from = cs;
-	return (left.had_screen || left.had_window) && cs - left.bare_from >= 300;
+	return (left.had_screen || left.had_window) && left.bare_from - left.shown_at >= 1000 && cs - left.bare_from >= 300;
 }
 
 /* The menus' titles: Game, Saves, Disk Drive unless the game's settings hide it, and Settings.

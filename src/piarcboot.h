@@ -269,6 +269,7 @@ const char *needs_support(const adfs_file_t *files, int n);     /* the support p
 int write_hostfs(const char *dir, const adfs_file_t *f, int n);  /* files written in a folder as HostFS names them; 0 when all were */
 int has_installer(const game_t *g, const char *id);             /* its presets have an installer script for it */
 int run_installer(game_t *g, const char *id, progress_t *p);    /* its files copied from its discs onto its HostFS folder, kept in installed/ */
+int install_package_apps(const char *id, const char *title, const uint8_t *zip, size_t len, const char *part, progress_t *p);
 void deploy_installed(const char *id);
 
 int classic_count(void);

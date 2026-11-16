@@ -16,7 +16,13 @@ It joins 5 sources:
     of package name, game number and count, as tests/floppies.sh makes it.
 
 A game goes in the table when the README has it green, or names it among the extra packages that
-reach the same screen as RISC OS 3.11. Those that play in the desktop are shown cropped to their
+reach the same screen as RISC OS 3.11, or PiArcBoot's own tests have seen it reach its screens where
+the README's test couldn't judge it or didn't try it (E-Type II; Alone in the Dark, which installs to a
+HostFS folder; Confusion, Cyborg and Word Up Word Down, whose discs are only in their release folders;
+Xenon 2, whose first disc is an application in its package, presets/Xenon-2-Megablast.ini; and
+Manchester United, which runs !!MUFC!! as its disc's Arthur boot file says to). Those
+not in ROO311's launch list, or started another way, have their lines in LAUNCH. Those that play in
+the desktop are shown cropped to their
 windows, as their presets say (presets/README.md). A game with no floppy image in its package or its release folder is left out too, since
 there is nothing to boot it from. Every other package in the feed is listed by name only, so the
 launcher can tell a package it has left out from one JASPP has added since.
@@ -38,7 +44,11 @@ MANUAL = {
     "Zool - Ninja of the 'Nth' Dimension [32bit version]": "Zool-[32bit]",
 }
 EXTRA = ["Adventures-classic-compilation", "Champions", "COPS", "Killerbugs", "Plague-Planet", "SpySnatcher",
-         "World-Class-Leaderboard"]
+         "World-Class-Leaderboard", "E-Type-II", "Alone-in-the-Dark", "Confusion", "Cyborg",
+         "Word-Up-Word-Down", "Xenon-2-Megablast", "Manchester-United"]
+LAUNCH = {"Confusion": ["shift", "-", "0", "0"], "Cyborg": ["run", "!Cyborg", "0", "0"],
+          "Word-Up-Word-Down": ["shift", "-", "0", "0"], "Xenon-2-Megablast": ["run", "!Xenon2", "0", "0"],
+          "Manchester-United": ["run", "!!MUFC!!", "0", "0"]}
 
 
 def norm(s):
@@ -76,6 +86,7 @@ def main():
         p = line.rstrip("\n").split("\t")
         if len(p) >= 5:
             launch[p[0]] = p[1:]
+    launch.update(LAUNCH)
 
     # the README's table: (status, title, year, how it starts)
     rows = re.findall(r"^\| (\S+) \| (.+?) \| (\d{4}) \| (.*?) \| .*? \|$", open(readme, encoding="utf-8").read(), re.M)

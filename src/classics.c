@@ -827,7 +827,9 @@ int has_installer(const game_t *g, const char *id)
 /* Copies a game's files from its discs onto its HostFS folder, as the copy list its presets give
    it says, with id the game's own (a JASPP game's folder is <id>.part while it installs). Each
    line is "copy <disc> <from> <to>", a folder with all in it or a file, and a later copy takes the
-   place of an earlier one of the same name. 0 when it installed or there is no list, 1 when it
+   place of an earlier one of the same name. "join <disc> <from> <to>" puts a file on the end of
+   one already copied, for a file an installer joins from two discs, and "folder <to>" makes an
+   empty folder. 0 when it installed or there is no list, 1 when it
    can't yet for want of a disc the game doesn't have, -1 with p->error saying why when it failed.
    A game whose install fails still plays from its floppies. */
 int run_installer(game_t *g, const char *id, progress_t *p)
@@ -846,7 +848,7 @@ int run_installer(game_t *g, const char *id, progress_t *p)
 		ndisc[i] = -2;          /* not read yet */
 	for (line = text; line && *line && !result; line = next)
 	{
-		char from[300], to[300];
+		char from[300], to[300], verb[8];
 		const char *a, *b;
 		int k, j, m;
 
@@ -860,7 +862,20 @@ int run_installer(game_t *g, const char *id, progress_t *p)
 			break;
 		}
 		line[strcspn(line, "\r")] = 0;
-		if (sscanf(line, " copy %d %299s %299[^\n]", &k, from, to) != 3 || from[0] != '$' || to[0] != '$')
+		if (sscanf(line, " folder %299[^\n]", to) == 1 && to[0] == '$' && to[1] == '.')
+		{
+			for (m = 0; m < nout && !same_name(out[m].path, to + 2); m++);
+			if (m == nout)
+			{
+				out = realloc(out, (size_t)(nout + 1) * sizeof *out);
+				memset(&out[nout], 0, sizeof *out);
+				out[nout].path = strdup(to + 2);
+				out[nout++].dir = 1;
+			}
+			continue;
+		}
+		if (sscanf(line, " %7s %d %299s %299[^\n]", verb, &k, from, to) != 4 || (strcmp(verb, "copy") && strcmp(verb, "join")) ||
+		    from[0] != '$' || to[0] != '$')
 			continue;
 		if (k < 1 || k > g->ndiscs)
 		{
@@ -877,6 +892,23 @@ int run_installer(game_t *g, const char *id, progress_t *p)
 		}
 		a = from[1] == '.' ? from + 2 : from + 1;
 		b = to[1] == '.' ? to + 2 : to + 1;
+		if (!strcmp(verb, "join"))
+		{
+			const char *rest;
+
+			for (j = 0; j < ndisc[k - 1] && (disc[k - 1][j].dir || !(rest = inside(disc[k - 1][j].path, a)) || *rest); j++);
+			for (m = 0; m < nout && (out[m].dir || !same_name(out[m].path, b)); m++);
+			if (j == ndisc[k - 1] || m == nout)
+			{
+				snprintf(p->error, sizeof p->error, "The game's presets join a file that isn't there.");
+				result = -1;
+				break;
+			}
+			out[m].data = realloc((uint8_t *)out[m].data, out[m].len + disc[k - 1][j].len + 1);
+			memcpy((uint8_t *)out[m].data + out[m].len, disc[k - 1][j].data, disc[k - 1][j].len);
+			out[m].len += disc[k - 1][j].len;
+			continue;
+		}
 		for (j = 0; j < ndisc[k - 1]; j++)
 		{
 			const adfs_file_t *f = &disc[k - 1][j];
@@ -955,6 +987,45 @@ int run_installer(game_t *g, const char *id, progress_t *p)
 		return snprintf(p->error, sizeof p->error, "The game's files can't be saved."), -1;
 	}
 	return 0;
+}
+
+/* For a JASPP game whose presets say apps=<folder>: the applications its package holds in that
+   folder go in a HostFS folder, as a Classics game's can, with the game's presets laid over them
+   and a copy kept in installed/, while the package's disc images go in the drive. Xenon 2's
+   package holds its first disc only as its application, beside the image of its copy protected
+   second disc. 0 when there is no such preset or it installed. */
+int install_package_apps(const char *id, const char *title, const uint8_t *zip, size_t len, const char *part, progress_t *p)
+{
+	char prefix[80], hostfs[1100], installed[1100];
+	adfs_file_t *files;
+	int n, i, k = 0;
+
+	if (!preset_setting(id, "apps", prefix, sizeof prefix))
+		return 0;
+	n = adfs_from_zip(zip, len, prefix, &files);
+	if (n <= 0)
+		return fail(p, "The game's package holds no applications.");
+	for (i = 0; i < n; i++)         /* the disc images go in the drive, not the folder */
+	{
+		const char *name = strrchr(files[i].path, '.');
+
+		name = name ? name + 1 : files[i].path;
+		if (!files[i].dir && strlen(name) == 8 && name[0] == 'F' && strspn(name + 1, "0123456789") == 7)
+		{
+			free((char *)files[i].path);
+			free((uint8_t *)files[i].data);
+			continue;
+		}
+		files[k++] = files[i];
+	}
+	add_presets(id, &files, &k);
+	i = install_hostfs(title, "", files, k, part, p);
+	adfs_free(files, k);
+	snprintf(hostfs, sizeof hostfs, "%s/hostfs", part);
+	snprintf(installed, sizeof installed, "%s/installed", part);
+	if (!i && copy_tree(hostfs, installed))
+		i = fail(p, "The game's files can't be saved.");
+	return i;
 }
 
 /* The game's HostFS folder put back from what its installer installed, when the folder is missing */
