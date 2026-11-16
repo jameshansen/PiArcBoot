@@ -6,7 +6,7 @@
 
 <p align="center"><a href="../../releases/latest"><b>Download for Raspberry Pi OS, Linux or Windows</b></a></p>
 
-<p align="center">Discord: <a href="https://discord.gg/88VzuWSYUc">https://discord.gg/88VzuWSYUc</a></p>
+
 
 <p align="center"><img src="docs/launcher.png" alt="The launcher's JASPP tab, with four games installed"></p>
 
@@ -21,6 +21,9 @@ On Windows, in PowerShell:
 ```powershell
 irm https://github.com/jameshansen/PiArcBoot/releases/latest/download/install.ps1 | iex
 ```
+
+[Discord](https://discord.gg/88VzuWSYUc) | [Stardot Release Thread](https://stardot.org.uk/forums/viewtopic.php?p=497517) | [JASPP Release Thread](https://forums.jaspp.org.uk/forum/viewtopic.php?p=6243)
+
 
 ## Background
 
