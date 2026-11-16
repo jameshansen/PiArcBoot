@@ -81,7 +81,7 @@ Restoring a save puts back anything the game wrote to a floppy too, while files 
 - **Crop to Window** for a game that plays in the RISC OS desktop: the picture is cropped to the game's windows, leaving out the icon bar and the desktop around them, and it follows them as they open, close and move. The Game menu turns it on or off for any game, your own included, and the games that need it start with it on.
 - **Copy protection as the disc has it**, so the games' own disc checks pass.
 
-<p align="center"><img src="docs/lemmings_shaders.png" width="642" alt="Lemmings' first level in a window of its own through a CRT shader, under its Game and Saves menus"></p>
+<p align="center"><img src="docs/lemmings_shaders.png" alt="Lemmings' first level in a window of its own through a CRT shader, under its Game and Saves menus"></p>
 
 - **Shaders.** CRT-Royale-Pi, an optimized version of CRT-Royale by TroggleMonkey, and CRT-Pi, a lightweight CRT filter by davej, provide a closer experience to playing the games on a CRT monitor, available under the Game -> Shaders menu.
 
