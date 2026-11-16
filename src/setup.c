@@ -15,6 +15,7 @@
 #include <windows.h>
 #include <shlobj.h>
 #else
+#include <fcntl.h>
 #include <sys/statvfs.h>
 #include <sys/wait.h>
 #endif
@@ -580,7 +581,8 @@ static int pick_folder(char *buf, size_t size)
 	return 0;
 }
 
-/* The copy just installed started, as a program of its own that outlives this one */
+/* The copy just installed started, as a program of its own that outlives this one, with nothing
+   of the terminal the installer may have been run from */
 static void start_installed(void)
 {
 	char exe[800];
@@ -608,6 +610,16 @@ static void start_installed(void)
 			setsid();
 			if (fork() == 0)
 			{
+				int null = open("/dev/null", O_RDWR);
+
+				if (null >= 0)
+				{
+					dup2(null, 0);
+					dup2(null, 1);
+					dup2(null, 2);
+					if (null > 2)
+						close(null);
+				}
 				execl(exe, exe, (char *)NULL);
 				_exit(127);
 			}

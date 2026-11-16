@@ -172,11 +172,13 @@ typedef struct
 	int win_w, win_h;       /* the game window's size as the player last dragged it, in pixels, or 0 */
 	int a3000;              /* runs at the speed of an A3000's 8 MHz ARM2, not a 25 MHz ARM3 */
 	int real_drive;         /* its floppy drive loads at a real one's speed */
+	int hide_drive;         /* the Disk Drive menu is hidden: 1 or 0, or -1 for hidden while it has one disc */
 	int desktop, menu;      /* has a desktop shortcut, a menu entry */
 	int ndiscs;
 	char disc[MAX_DISCS][40];       /* the disc image files in its folder */
 	uint8_t ro[MAX_DISCS];          /* that disc goes in write protected */
 } game_t;
+#define HIDES_DRIVE(g) ((g)->hide_drive >= 0 ? (g)->hide_drive : (g)->ndiscs <= 1)
 
 /* A game in the JASPP list */
 typedef struct
@@ -237,6 +239,9 @@ int import_game(char **files, int n, const char *add_to, char *id_out, char *err
 int spawn_game(const char *id);
 int store_fetch(const char *url, const char *dest);     /* downloads a file; 0 when it arrived */
 
+/* http.c: downloads, inside the program */
+uint8_t *http_get(const char *url, int seconds, size_t *len);
+
 /* setup.c: the installer, "piarcboot setup" */
 int setup_main(int argc, char **argv, const char *script);
 
@@ -270,7 +275,7 @@ void classics_add_source(const char *url);
 void classics_remove_source(int i);
 int install_classic(const classic_t *c, int desktop, int menu, progress_t *p);
 int layout_files(game_t *g, const char *dir, adfs_file_t *files, int n, const char *boot, const char *support, progress_t *p);
-char **pick_files(int *n);
+char **pick_files(int one_disc, int *n);
 void open_url(const char *url);
 
 /* The windows are drawn with ROOGUI, which gives them the look of the RISC OS desktop */

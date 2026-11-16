@@ -1,6 +1,7 @@
 # Changed for PiArcBoot on 2026-11-15: a pass that draws a beam table goes before the
 # vertical scanlines pass, which reads it, and the bloom's horizontal blur is the last pass,
 # doing the border and the display's gamma itself. See the notes at those passes below.
+# Changed for PiArcBoot on 2026-11-16: the last pass leaves the border undimmed.
 
 # IMPORTANT:
 # Shader passes need to know details about the image in the mask_texture LUT

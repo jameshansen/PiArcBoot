@@ -8,9 +8,10 @@
 
    The Game menu has Pause, full screen and the three window sizes. Saves has three slots, each a whole
    machine kept in a file: one of them is written every 30 seconds of play, and restoring a slot
-   makes it that one. Switch Floppy, there only for a game with more than one disc, changes the
-   disc in the drive, and an auto switch point remembers the screen a game asks for a disc on, so
-   that the next time the game shows that screen the disc changes by itself. */
+   makes it that one. Disk Drive changes the disc in the drive, to one of the game's or to any
+   image picked with Select Disk, and an auto switch point remembers the screen a game asks for a
+   disc on, so that the next time the game shows that screen the disc changes by itself. A game's
+   settings can hide Disk Drive, as they do by default for a game with one disc. */
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -63,11 +64,11 @@ static int can_shade, shader_on;        /* the renderer is one the shaders run i
 #define MENUS 3
 #define SLOTS 3
 #define MAX_ITEMS (MAX_DISCS + 14 + SLOTS * 4 + NSHADERS)
-static const char *const menu_titles[MENUS] = { "Game", "Saves", "Switch Floppy" };
-static int n_menus = MENUS;             /* 2 for a game with one disc: no Switch Floppy */
+static const char *const menu_titles[MENUS] = { "Game", "Saves", "Disk Drive" };
+static int n_menus = MENUS;             /* 2 with Disk Drive hidden */
 enum { CMD_FULLSCREEN = 1, CMD_SCALE, CMD_CLOSE = CMD_SCALE + 4, CMD_SET_SWAP, CMD_CLEAR_SWAPS, CMD_SEND_ESC, CMD_CROP, CMD_DISC,
 	CMD_AUTO = 100, CMD_RESTORE = CMD_AUTO + SLOTS, CMD_SAVE = CMD_RESTORE + SLOTS, CMD_SELECTOR = CMD_SAVE + SLOTS, CMD_SNAPSHOT,
-	CMD_PAUSE, CMD_SHADER };
+	CMD_PAUSE, CMD_PICK_DISC, CMD_SHADER };
 static time_t saved_at[SLOTS];          /* when each slot was last written, or 0 for an empty one */
 static int armed;                       /* Auto Save may write its slot: it was empty, or since the game started it has been restored or saved to, or a slot chosen */
 static int want_save, want_restore;     /* a slot to save to or restore, counting from 1, waiting for the floppy drive to finish */
@@ -749,7 +750,7 @@ static int restore_slot(int k)
 	emu_script_stop();
 	swap_pending = 0;
 	in = machine_disc_path(0);
-	for (i = 0; in && i < game.ndiscs; i++)
+	for (cur_disc = -1, i = 0; in && i < game.ndiscs; i++)
 	{
 		store_game_path(game.id, game.disc[i], path, sizeof path);
 		if (!strcmp(path, in))
@@ -1021,6 +1022,36 @@ static void start_shader(void)
 		}
 }
 
+/* Puts any disc image in the drive, picked with the system's file dialog. It goes in write
+   enabled, and what the game writes is kept beside it, as for the game's own discs. */
+static void pick_disc(void)
+{
+	char **files, text[160];
+	const char *name;
+	int n;
+
+	set_capture(0);
+	files = pick_files(1, &n);
+	if (n < 0)
+		notify("There's no file dialog to choose a disk with: install zenity or kdialog.");
+	else if (n > 0)
+	{
+		name = base_name(files[0]);
+		if (machine_disc(0, files[0], 0))
+			snprintf(text, sizeof text, "%s isn't a disk image that can be read.", name);
+		else
+		{
+			cur_disc = -1;          /* none of the game's own */
+			swap_pending = 0;       /* an auto switch point goes to one of those */
+			snprintf(text, sizeof text, "%s inserted", name);
+		}
+		notify(text);
+	}
+	while (n-- > 0)
+		free(files[n]);
+	free(files);
+}
+
 /* What the menus hold just now, in order. Returns how many items. */
 static int menu_items(menu_item_t *it, int booting)
 {
@@ -1076,6 +1107,7 @@ static int menu_items(menu_item_t *it, int booting)
 	ITEM(2, CMD_SET_SWAP, swap_pending, 1, "Set Auto Switch Point");
 	if (n_swaps)
 		ITEM(2, CMD_CLEAR_SWAPS, 0, 0, "Clear Auto Switch Points");
+	ITEM(2, CMD_PICK_DISC, 0, 1, "Select Disk...");
 #undef ITEM
 	return n;
 }
@@ -1181,6 +1213,8 @@ static int menu_command(int cmd)
 		emu_script("key esc down\nwait 5\nkey esc up\n");
 	else if (cmd >= CMD_DISC && cmd < CMD_DISC + game.ndiscs)
 		choose_disc(cmd - CMD_DISC);
+	else if (cmd == CMD_PICK_DISC)
+		pick_disc();
 	return 0;
 }
 
@@ -1541,7 +1575,7 @@ int game_main(const char *id, const char *test_script)
 	start_shader();
 	SDL_InitSubSystem(SDL_INIT_AUDIO);      /* a machine with no sound still plays, silently */
 	/* The menu bar is the system's own where it has one to give */
-	n_menus = game.ndiscs > 1 ? MENUS : MENUS - 1;
+	n_menus = HIDES_DRIVE(&game) ? MENUS - 1 : MENUS;
 	for (i = 0; i < SLOTS; i++)
 		saved_at[i] = slot_time(i);
 	armed = !game.autosave || !saved_at[game.autosave - 1];         /* a save from before isn't written over until the player says */
@@ -1655,8 +1689,10 @@ int game_main(const char *id, const char *test_script)
 						if (down && !e.key.repeat && (!booting || key == SDLK_r))      /* a restore can end the boot, as the menu's does */
 							quick_key(key);
 					}
-					else if (sc == SDL_SCANCODE_ESCAPE)    /* frees the mouse, and never reaches the machine */
+					else if (sc == SDL_SCANCODE_ESCAPE)    /* frees the mouse and leaves full screen, and never reaches the machine */
 					{
+						if (down && fullscreen && !selector && !confirming && !e.key.repeat)   /* a box open closes first */
+							set_fullscreen(0);
 						if (down)
 							set_capture(0);
 					}

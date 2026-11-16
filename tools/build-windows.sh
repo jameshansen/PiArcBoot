@@ -52,7 +52,7 @@ cp "$HERE/icon.ico" .
 printf '1 ICON "icon.ico"\n' > piarcboot.rc
 zig rc piarcboot.rc piarcboot.res
 zig cc -target x86_64-windows-gnu -o "$OUT/piarcboot.exe" $objs piarcboot.res -lmingw32 \
-  "$SDL/lib/libSDL2main.a" "$SDL/lib/libSDL2.dll.a" "$ZLIB/libz.dll.a" "$GUI/build/win/libroogui.dll.a" -lcomdlg32 -lshell32 -lole32 -Wl,--subsystem,windows
+  "$SDL/lib/libSDL2main.a" "$SDL/lib/libSDL2.dll.a" "$ZLIB/libz.dll.a" "$GUI/build/win/libroogui.dll.a" -lcomdlg32 -lshell32 -lole32 -lwinhttp -Wl,--subsystem,windows
 # The front of the installer (tools/mkinstaller.py packs the folder behind it), with the program's
 # icon and a manifest saying it runs as whoever starts it: without one, Windows takes a program
 # called Install for one that needs an administrator

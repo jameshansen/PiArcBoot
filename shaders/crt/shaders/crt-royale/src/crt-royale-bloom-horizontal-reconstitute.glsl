@@ -36,6 +36,8 @@ precision highp int;
 //  geometry (geom_mode 0, no overscan), which saves drawing the picture once more. The
 //  shader parameters are declared here in its place. The curved geometry modes need that
 //  pass after this one again.
+//  Changed for PiArcBoot on 2026-11-16: the picture goes to the edge of its place undimmed,
+//  with no darkened border.
 
 #pragma parameter crt_gamma "Simulated CRT Gamma" 2.5 1.0 5.0 0.025
 #pragma parameter lcd_gamma "Your Display Gamma" 2.2 1.0 5.0 0.025
@@ -6232,10 +6234,9 @@ void main()
         diffusion_color, diffusion_weight);
 
     //  Encode and output the bloomed image:
-    //  The last pass's work: dim the border, and encode for the display.
+    //  The last pass's work: encode for the display.
     //  The colour is clamped first, as storing it in a texture between the passes did.
-    const float3 final_color = saturate(final_bloom) *
-        get_border_dim_factor(border_uv, border_geom_aspect);
+    const float3 final_color = saturate(final_bloom);
     FragColor = float4(pow(final_color, float3(1.0/lcd_gamma)), 1.0);
 } 
 #endif

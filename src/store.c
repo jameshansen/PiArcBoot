@@ -143,6 +143,7 @@ int store_load(const char *id, game_t *g)
 	snprintf(g->id, sizeof g->id, "%s", id);
 	g->crop = -1;
 	g->autosave = 1;
+	g->hide_drive = -1;
 	for (line = text; line && *line; line = next)
 	{
 		char *eq, *v;
@@ -174,6 +175,7 @@ int store_load(const char *id, game_t *g)
 		else if (!strcmp(line, "capture")) g->nocapture = !atoi(v);
 		else if (!strcmp(line, "speed")) g->a3000 = !strcmp(v, "a3000");
 		else if (!strcmp(line, "drive")) g->real_drive = !strcmp(v, "real");
+		else if (!strcmp(line, "drivemenu")) g->hide_drive = !strcmp(v, "hide");
 		else if (!strcmp(line, "width")) g->win_w = atoi(v) > 0 ? atoi(v) : 0;
 		else if (!strcmp(line, "height")) g->win_h = atoi(v) > 0 ? atoi(v) : 0;
 		else if (!strcmp(line, "desktop")) g->desktop = atoi(v);
@@ -225,6 +227,8 @@ int store_save(const game_t *g)
 		fprintf(f, "speed=a3000%c", 10);
 	if (g->real_drive)
 		fprintf(f, "drive=real%c", 10);
+	if (g->hide_drive >= 0)
+		fprintf(f, "drivemenu=%s%c", g->hide_drive ? "hide" : "show", 10);
 	if (g->win_w > 0 && g->win_h > 0)
 		fprintf(f, "width=%d\nheight=%d\n", g->win_w, g->win_h);
 	for (i = 0; i < g->ndiscs; i++)
@@ -906,10 +910,15 @@ void catalog_load_feed(const char *text)
 	}
 }
 
-/* Fetches a file with curl. Returns 0 if it arrived. */
+/* Downloads a file to dest. Returns 0 if it arrived. */
 int store_fetch(const char *url, const char *dest)
 {
-	return run_command("curl -fsL --connect-timeout 20 --max-time 900 -o \"%s\" \"%s\"", dest, url);
+	size_t len;
+	uint8_t *data = http_get(url, 900, &len);
+	int failed = !data || file_write(dest, data, len);
+
+	free(data);
+	return failed ? -1 : 0;
 }
 
 /* Fetches the feed's index into the data folder as feed.txt. Returns 0 if a new copy arrived. */
@@ -1114,25 +1123,33 @@ static int from_package(const entry_t *e, const char *part, int *have, progress_
 
 /* The names of the floppy images in a game's release folder on JASPP's server, from the folder's
    listing. Returns how many, or -1 if the listing didn't arrive. Only a plain file name is
-   taken, since the names go on a command line. */
+   taken, since the names go into URLs and file names. */
 static int release_images(unsigned game, char names[][300], int max)
 {
 	char url[200], *listing, *q;
 	int count = 0;
 
 	snprintf(url, sizeof url, RELEASE_URL, game);
-	listing = run_output("curl -fsL --connect-timeout 20 --max-time 120 \"%s\"", url);
+	listing = (char *)http_get(url, 120, NULL);
 	if (!listing)
 		return -1;
 	for (q = listing; (q = strstr(q, "href=\"")) && count < max; )
 	{
-		size_t len;
+		char name[300];
+		size_t len, i, n = 0;
 
 		q += 6;
 		len = strcspn(q, "\"");
-		if (len > 4 && len < 300 && !strncmp(q + len - 4, ".jfd", 4) &&
-		    strspn(q, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%._()!,+~'-") == len)
-			snprintf(names[count++], 300, "%.*s", (int)len, q);
+		for (i = 0; i < len && n < sizeof name - 1; i++)       /* the page's HTML gives & as &amp;, as in Bug Hunter & Moondash */
+		{
+			name[n++] = q[i];
+			if (!strncmp(q + i, "&amp;", 5))
+				i += 4;
+		}
+		name[n] = 0;
+		if (i == len && n > 4 && !strcmp(name + n - 4, ".jfd") &&
+		    strspn(name, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%._()!,+~'&-") == n)
+			snprintf(names[count++], 300, "%s", name);
 	}
 	free(listing);
 	return count;
@@ -1178,7 +1195,7 @@ int install_jaspp(const entry_t *e, int desktop, int menu, progress_t *p)
 	game_t g;
 
 	memset(&g, 0, sizeof g);
-	g.crop = -1;
+	g.crop = g.hide_drive = -1;
 	snprintf(g.id, sizeof g.id, "%s.part", e->id);
 	store_game_path(g.id, "", part, sizeof part);
 	store_game_path(e->id, "", final, sizeof final);
@@ -1431,6 +1448,7 @@ static void new_game(game_t *g, const char *file, const char *zip)
 	}
 	g->crop = -1;
 	g->autosave = 1;
+	g->hide_drive = -1;
 }
 
 /* ---- Archives of applications ----
@@ -1840,9 +1858,10 @@ int spawn_game(const char *id)
 #endif
 }
 
-/* Asks for disc images with the system's own file dialog. Returns the names chosen, to be
-   freed, with *n how many: 0 if the dialog was cancelled, -1 if there is no dialog to ask with. */
-char **pick_files(int *n)
+/* Asks for disc images with the system's own file dialog: a game's, or with one_disc the one
+   disc image to put in the drive. Returns the names chosen, to be freed, with *n how many: 0 if
+   the dialog was cancelled, -1 if there is no dialog to ask with. */
+char **pick_files(int one_disc, int *n)
 {
 	char **list = NULL;
 
@@ -1854,11 +1873,13 @@ char **pick_files(int *n)
 		char *p;
 
 		buf[0] = 0;
-		ofn.lpstrFilter = "Disc images and archives\0*.jfd;*.adf;*.hfe;*.adl;*.zip;*.arc;*.spk\0All files\0*.*\0";
+		ofn.lpstrFilter = one_disc ? "Disc images\0*.jfd;*.adf;*.hfe;*.adl\0All files\0*.*\0" :
+					     "Disc images and archives\0*.jfd;*.adf;*.hfe;*.adl;*.zip;*.arc;*.spk\0All files\0*.*\0";
 		ofn.lpstrFile = buf;
 		ofn.nMaxFile = sizeof buf;
-		ofn.lpstrTitle = "Add Game: choose its disc images, or an archive of its applications";
-		ofn.Flags = OFN_ALLOWMULTISELECT | OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+		ofn.lpstrTitle = one_disc ? "Select Disk: choose a disc image to put in the drive" :
+					    "Add Game: choose its disc images, or an archive of its applications";
+		ofn.Flags = (one_disc ? 0 : OFN_ALLOWMULTISELECT) | OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
 		if (!GetOpenFileNameA(&ofn))
 			return NULL;
 		p = buf + strlen(buf) + 1;
@@ -1880,14 +1901,22 @@ char **pick_files(int *n)
 	{
 		char *out, *p;
 
-		out = run_output("zenity --file-selection --multiple --separator='\n' --title='Add Game: choose its disc images, or an archive of its applications' "
-				 "--file-filter='Disc images and archives | *.jfd *.JFD *.adf *.ADF *.hfe *.HFE *.adl *.ADL *.zip *.ZIP *.arc *.ARC *.spk *.SPK *,ddc *,3fb *,a91' "
-				 "--file-filter='All files | *' 2>/dev/null");
+		if (one_disc)
+			out = run_output("zenity --file-selection --title='Select Disk: choose a disc image to put in the drive' "
+					 "--file-filter='Disc images | *.jfd *.JFD *.adf *.ADF *.hfe *.HFE *.adl *.ADL' --file-filter='All files | *' 2>/dev/null");
+		else
+			out = run_output("zenity --file-selection --multiple --separator='\n' --title='Add Game: choose its disc images, or an archive of its applications' "
+					 "--file-filter='Disc images and archives | *.jfd *.JFD *.adf *.ADF *.hfe *.HFE *.adl *.ADL *.zip *.ZIP *.arc *.ARC *.spk *.SPK *,ddc *,3fb *,a91' "
+					 "--file-filter='All files | *' 2>/dev/null");
 		if (!out && run_command("command -v zenity >/dev/null 2>&1"))
 		{
-			out = run_output("kdialog --title 'Add Game: choose its disc images, or an archive of its applications' --getopenfilename \"$HOME\" "
-					 "'Disc images and archives (*.jfd *.JFD *.adf *.ADF *.hfe *.HFE *.adl *.ADL *.zip *.ZIP *.arc *.ARC *.spk *.SPK *,ddc *,3fb *,a91)\nAll files (*)' "
-					 "--multiple --separate-output 2>/dev/null");
+			if (one_disc)
+				out = run_output("kdialog --title 'Select Disk: choose a disc image to put in the drive' --getopenfilename \"$HOME\" "
+						 "'Disc images (*.jfd *.JFD *.adf *.ADF *.hfe *.HFE *.adl *.ADL)\nAll files (*)' 2>/dev/null");
+			else
+				out = run_output("kdialog --title 'Add Game: choose its disc images, or an archive of its applications' --getopenfilename \"$HOME\" "
+						 "'Disc images and archives (*.jfd *.JFD *.adf *.ADF *.hfe *.HFE *.adl *.ADL *.zip *.ZIP *.arc *.ARC *.spk *.SPK *,ddc *,3fb *,a91)\nAll files (*)' "
+						 "--multiple --separate-output 2>/dev/null");
 			if (!out && run_command("command -v kdialog >/dev/null 2>&1"))
 			{
 				*n = -1;

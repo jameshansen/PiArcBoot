@@ -14,7 +14,9 @@
         Write-Host 'Downloading PiArcBoot-Installer-Windows.zip'
         Invoke-WebRequest -UseBasicParsing "$url/PiArcBoot-Installer-Windows.zip" -OutFile "$dir\installer.zip"
         Expand-Archive "$dir\installer.zip" $dir
-        Start-Process -Wait "$dir\Install PiArcBoot.exe"
+        # waits for the installer alone: -Wait would also wait for PiArcBoot, once the installer starts it
+        $installer = Start-Process -PassThru "$dir\Install PiArcBoot.exe"
+        $installer.WaitForExit()
     } finally {
         Remove-Item -Recurse -Force $dir
     }

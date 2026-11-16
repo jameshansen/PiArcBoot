@@ -67,11 +67,12 @@ Restoring a save puts back anything the game wrote to a floppy too, while files 
 - **Every game is its own program**, with its own window, taskbar icon and shortcuts.
 - **Any window size, and full screen**, with the picture kept sharp at every size.
 - **Quick loading.** Games load from their floppies much faster than a real drive manages.
+- **A3000 speed.** A game's Settings can run it at the speed of an A3000's 8 MHz ARM2 rather than a 25 MHz ARM3, for a game made for the slower machine, and can load its floppies at a real drive's speed.
 - **A CRT look.** CRT-Royale-Pi and CRT-Pi in the Shaders menu draw the picture as a monitor of the time showed it, with scanlines and a phosphor mask.
 - **Save states.** Every game gets 3 save slots, each one holding the whole machine as it was at that moment along with a screenshot of it. One slot is saved every 30 seconds of play, and a game with saves opens on all 3 side by side, so you can continue one or start a new game in an empty slot.
 - **Search** across the game lists, and each tab shows how many of its games match.
-- **Disc switching** from the Switch Floppy menu or with Ctrl, Alt and a number, and auto switch points, which change the disc by themselves when a game shows the screen that asks for it.
-- **Your own disc images.** Add Game on the My Games tab turns JFD, ADF, ADL and HFE images, the usual Archimedes disc image formats, or a zip of them, into games, with the discs put in order from their names. A game's Settings can run it at A3000 speed, an 8 MHz ARM2 rather than a 25 MHz ARM3, for a game made for the slower machine, or load its floppies at a real drive's speed.
+- **Disc switching** from the Disk Drive menu or with Ctrl, Alt and a number, and auto switch points, which change the disc by themselves when a game shows the screen that asks for it. Select Disk in the same menu puts any disc image in the drive.
+- **Your own disc images.** Add Game on the My Games tab turns JFD, ADF, ADL and HFE images, the usual Archimedes disc image formats, or a zip of them, into games, with the discs put in order from their names.
 - **Your own archives.** A zip, Spark or ArcFS archive of RISC OS applications becomes a game too, starting from the application named after the archive, or its biggest.
 - **Hard disc installs.** The games that came with a hard disc installer, such as Black Angel, Carnage Inc and Raw Power, have the files it would copy taken straight off their disc images as they install, or as their discs are added with Add Game, so they start from a folder the machine reads directly with no discs to swap.
 - **Saves are kept** in a file beside each disc image, and the image itself is never changed. Any disc can be made read only.
@@ -84,7 +85,7 @@ Restoring a save puts back anything the game wrote to a floppy too, while files 
 
 Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 26.04), a Raspberry Pi 400 with 64-bit Raspberry Pi OS 13, and Windows 10.
 
-- All 110 games boot from their first disc to their own screens. Against reference pictures at 35 and 65 seconds, 102 match, 6 get there by 95 seconds (Black Angel, Empire Soccer 94, Powerband, Raw Power, Silver Ball and Thundermonk), and Botkiller 2 and the Risc PC version of Speedball 2 load from their 1.6MB discs
+- All 110 games boot from their first disc to their own screens. Against reference pictures at 35 and 65 seconds, 101 match, Chocks Away Compendium gets further than its pictures, which stop at an error, and plays, 6 get there by 95 seconds (Black Angel, Empire Soccer 94, Powerband, Raw Power, Silver Ball and Thundermonk), and Botkiller 2 and the Risc PC version of Speedball 2 load from their 1.6MB discs
 - The games' disc checks pass, among them Hero Quest's, Fire and Ice's and Blaston's, and what Jet Fighter writes to its boot disc is kept
 - Blank discs format, take files and read back after a fresh power on
 - The 11 Acorn Arcade games and 12 PackMan games in Classics install and start, Star Fighter 3000 and Meteors full screen
@@ -144,7 +145,7 @@ Click on the picture to give the mouse to the game. The left button is Select, t
 | Ctrl+Alt+S | Save to the slot selected for Auto Save |
 | Ctrl+Alt+R | Restore the slot selected for Auto Save |
 | Ctrl+Alt+P | Pause the game, or carry on |
-| Escape | Take the mouse back from the game |
+| Escape | Take the mouse back from the game, and leave full screen |
 | Alt+F4 | Quit, once the game no longer has the mouse |
 
 PiArcBoot's own shortcuts all use Ctrl+Alt, so Alt and every other key belong to the game. While the game has the mouse it has the keyboard too, including system keys like Alt+F4 and Alt+Tab, and Escape gives you both back.
@@ -155,7 +156,7 @@ Escape never reaches the game. A game that wants it gets it from **Send ESC** at
 
 **Pause** in the Game menu, or Ctrl+Alt+P, stops the game until you choose it again, and Auto Save doesn't count the time it's paused.
 
-In full screen there is no menu bar, and Ctrl+Alt+Enter comes back to the window.
+In full screen there is no menu bar, and Escape or Ctrl+Alt+Enter comes back to the window.
 
 Drag the window's edge or maximize it and the picture grows to fill the frame, keeping its shape. A size you drag it to is kept for the next time the game starts, and a size from the Game menu puts the window back to an exact multiple and opens every game at that size.
 
@@ -169,7 +170,7 @@ The **Saves** menu has 3 slots, and each one has **Save**, which keeps the whole
 
 When a game has saves, it starts on the selector, which shows the 3 slots side by side with their screenshots and when each one was saved. **Continue** restores a slot, **New Game** starts the game fresh in an empty one and **Erase** deletes a save after asking first, and whichever slot you pick becomes the one Auto Save writes to. **Open Selector** in the Saves menu brings it up during a game, which waits behind it until you close it and carry on where you were.
 
-To set an auto switch point, wait for the game to ask for a disc, choose **Set Auto Switch Point** from the Switch Floppy menu and then choose the disc. **Clear Auto Switch Points** forgets them all.
+The **Disk Drive** menu puts one of the game's discs in the drive. To set an auto switch point, wait for the game to ask for a disc, choose **Set Auto Switch Point** and then choose the disc. **Clear Auto Switch Points** forgets them all. **Select Disk...** puts a disc image from anywhere on your computer in the drive, and what the game writes to it goes in a `.sav` file beside it, as for the game's own discs. **Hide Disk Drive Menu** in a game's Settings takes the menu away, and it's ticked by default for a game with one disc. Ctrl+Alt and a number still change the disc while the menu is hidden.
 
 Games are kept in `~/.local/share/piarcboot/games`, a folder each, with their disc images, saved changes (`.sav`), save states (`saves/`), icon and settings.
 

@@ -981,7 +981,7 @@ int install_classic(const classic_t *c, int desktop, int menu, progress_t *p)
 	game_t g;
 
 	memset(&g, 0, sizeof g);
-	g.crop = -1;
+	g.crop = g.hide_drive = -1;
 	snprintf(g.id, sizeof g.id, "%s.part", c->id);
 	store_game_path(g.id, "", part, sizeof part);
 	store_game_path(c->id, "", final, sizeof final);

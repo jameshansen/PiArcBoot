@@ -77,7 +77,7 @@ static int dlg_kind;
 static int dlg_desktop, dlg_menu;
 static char dlg_choices[40][64];
 static int dlg_nchoices, dlg_choice;
-static int dlg_ro[MAX_DISCS], dlg_changed[MAX_DISCS], dlg_capture, dlg_a3000, dlg_real_drive;
+static int dlg_ro[MAX_DISCS], dlg_changed[MAX_DISCS], dlg_capture, dlg_a3000, dlg_real_drive, dlg_hide_drive;
 static char dlg_image[MAX_DISCS][64];   /* each disk's image format */
 static sprite_t *dlg_sprites;
 static int dlg_nsprites, dlg_sprite;
@@ -240,6 +240,7 @@ static void open_settings(const game_t *g)
 	dlg_capture = !g->nocapture;
 	dlg_a3000 = g->a3000;
 	dlg_real_drive = g->real_drive;
+	dlg_hide_drive = HIDES_DRIVE(g);
 	dlg_menu = g->menu;
 	dlg_scroll = dlg_fitted = 0;
 	for (i = 0; i < g->ndiscs; i++)
@@ -567,15 +568,22 @@ static void play(const game_t *listed)
 		message(text, RG_ERROR);
 }
 
-/* Text that opens a web page when it is clicked, underlined in the Wimp's dark blue. Returns its width. */
+static int over_link;            /* the pointer is over a link in what was just drawn */
+
+/* Text that opens a web page when it is clicked, underlined in the Wimp's dark blue, with the
+   pointer a hand over it. Returns its width. */
 static int link(int font, int x, int y, const char *text, const char *url)
 {
 	int w = rg_text_w(font, text), h = rg_font_height(font);
 
 	rg_text(font, x, y, rg_colour(RG_DARK_BLUE), text);
 	rg_fill(x, y + rg_font_ascent(font) + 2, w, 1, rg_colour(RG_DARK_BLUE));
-	if (rg_over(x, y, w, h) && rg_in.released)
-		open_url(url);
+	if (rg_over(x, y, w, h))
+	{
+		over_link = 1;
+		if (rg_in.released)
+			open_url(url);
+	}
 	return w;
 }
 
@@ -982,7 +990,7 @@ static int draw_list(int vx, int vy, int vw, int vh)
 		if (rg_button(vx + (vw - 110) / 2, y, 110, BTN_H, "Add Game...", 1))
 		{
 			int n;
-			char **files = pick_files(&n);
+			char **files = pick_files(0, &n);
 
 			if (n < 0)
 				message("Drop the game's disc images onto this window to add it.", RG_INFORMATION);
@@ -1154,7 +1162,7 @@ static void draw_dialog(int win_w, int win_h)
 	int mine = dlg == DLG_SETTINGS && !dlg_game.jaspp && !dlg_game.classic;
 	int thumbs = dlg_nsprites < MAX_THUMBS ? dlg_nsprites : MAX_THUMBS;
 	int disks = dlg == DLG_SETTINGS && dlg_game.ndiscs ? DISK_TABLE_H(dlg_game.ndiscs) + 8 : 0;
-	int full = (mine ? 324 + (thumbs > 8 ? (thumbs - 1) / 8 * 54 : 0) : dlg == DLG_PROGRESS ? 172 : 160) + disks + (dlg == DLG_SETTINGS ? 30 : 0);
+	int full = (mine ? 324 + (thumbs > 8 ? (thumbs - 1) / 8 * 54 : 0) : dlg == DLG_PROGRESS ? 172 : 160) + disks + (dlg == DLG_SETTINGS ? (mine ? 60 : 120) : 0);
 	int h = full < win_h - 8 ? full : win_h - 8;
 	int w = DLG_W < win_w - 24 ? DLG_W : win_w - 24, cw = w;
 	int x = (win_w - w) / 2, y = (win_h - h) / 2, ok_x, by, cx, cy, i, closed, add = 0, px = rg_in.x, py = rg_in.y;
@@ -1294,14 +1302,18 @@ static void draw_dialog(int win_w, int win_h)
 			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 8, 22, "Capture the mouse with a click", &dlg_capture, 1);
 			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 38, 22, "Run at A3000 speed (8 MHz ARM2)", &dlg_a3000, 1);
 			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 68, 22, "Load floppies at a real drive's speed", &dlg_real_drive, 1);
-			draw_disks(cx, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 98, cw - 44, 1);
+			rg_option(cx + 80, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 98, 22, "Hide Disk Drive Menu", &dlg_hide_drive, 1);
+			draw_disks(cx, cy + 108 + (thumbs ? (thumbs - 1) / 8 + 1 : 1) * 54 + 128, cw - 44, 1);
 		}
 		else
 		{
 			rg_option(cx, cy, 22, "Create desktop shortcut", &dlg_desktop, 1);
 			rg_option(cx, cy + 30, 22, "Create menu shortcut", &dlg_menu, 1);
 			rg_option(cx, cy + 60, 22, "Capture the mouse with a click", &dlg_capture, 1);
-			draw_disks(cx, cy + 96, cw - 44, 0);
+			rg_option(cx, cy + 90, 22, "Run at A3000 speed (8 MHz ARM2)", &dlg_a3000, 1);
+			rg_option(cx, cy + 120, 22, "Load floppies at a real drive's speed", &dlg_real_drive, 1);
+			rg_option(cx, cy + 150, 22, "Hide Disk Drive Menu", &dlg_hide_drive, 1);
+			draw_disks(cx, cy + 186, cw - 44, 0);
 		}
 		if (h < full)
 		{
@@ -1312,7 +1324,7 @@ static void draw_dialog(int win_w, int win_h)
 		if (add)
 		{
 			int n;
-			char **files = pick_files(&n);
+			char **files = pick_files(0, &n);
 
 			if (n < 0)
 			{
@@ -1345,11 +1357,9 @@ static void draw_dialog(int win_w, int win_h)
 				g.desktop = dlg_desktop;
 				g.menu = dlg_menu;
 				g.nocapture = !dlg_capture;
-				if (mine)
-				{
-					g.a3000 = dlg_a3000;
-					g.real_drive = dlg_real_drive;
-				}
+				g.a3000 = dlg_a3000;
+				g.real_drive = dlg_real_drive;
+				g.hide_drive = dlg_hide_drive == (g.ndiscs <= 1) ? -1 : dlg_hide_drive;    /* the default goes on following the number of discs */
 				if (g.ndiscs == dlg_game.ndiscs)        /* the disks in the order the box has them */
 				{
 					for (i = 0; i < g.ndiscs; i++)
@@ -1467,7 +1477,8 @@ int launcher_main(const char *test_script)
 {
 	uint8_t *rgba = malloc(128 * 128 * 4);
 	char **dropped = NULL;
-	int n_dropped = 0, frame = 0, drawn = 0;
+	int n_dropped = 0, frame = 0, drawn = 0, hand_shown = 0;
+	SDL_Cursor *hand = NULL;     /* a link's pointer, as a web page's is */
 
 	icon_app(rgba);
 	if (rg_open("PiArcBoot", 660, 500, RG_RESIZABLE, "piarcboot", rgba))
@@ -1543,6 +1554,7 @@ int launcher_main(const char *test_script)
 		rg_size(&w, &h);
 		rg_tile_origin(0, 0);
 		rg_marble(0, 0, w, h);
+		over_link = 0;
 
 		/* With a dialogue box open the window behind it is drawn but takes no input */
 		px = rg_in.x; py = rg_in.y; pressed = rg_in.pressed; released = rg_in.released; wheel = rg_in.wheel; key = rg_in.key;
@@ -1573,6 +1585,13 @@ int launcher_main(const char *test_script)
 			draw_dialog(w, h);
 			if (dlg == DLG_NONE)    /* it closed, by itself or by a click: the window is drawn once more without it */
 				drawn = 0;
+		}
+		if (over_link != hand_shown)
+		{
+			if (!hand)
+				hand = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
+			SDL_SetCursor(over_link && hand ? hand : SDL_GetDefaultCursor());
+			hand_shown = over_link;
 		}
 		if (shot)
 			rg_save_shot(shot);
