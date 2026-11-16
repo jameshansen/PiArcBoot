@@ -60,7 +60,7 @@ Every game in PiArcBoot has 3 save slots, and each one holds the whole emulated 
 
 Once a game has saves, it opens on the selector instead of booting straight in, with the 3 slots side by side, their screenshots and how long ago each one was saved, and nothing runs until you pick one. Continue carries on from that save, New Game starts fresh in an empty slot, and whichever slot you pick becomes the one Auto Save writes to from then on. Erase deletes a save, after asking first.
 
-![Lemmings' save selector, with a different level saved in each of its 3 slots](docs/saves.png)
+<p align="center"><img src="docs/saves.png" alt="Lemmings' save selector, with a different level saved in each of its 3 slots"></p>
 
 Restoring a save puts back anything the game wrote to a floppy too, while files in a game's own folder stay as they are. A save made with a different ROM, or with a version of PiArcBoot whose emulated machine has changed, won't restore, and the game carries on as it was.
 
@@ -71,7 +71,6 @@ Restoring a save puts back anything the game wrote to a floppy too, while files 
 - **Any window size, and full screen**, with the picture kept sharp at every size.
 - **Quick loading.** Games load from their floppies much faster than a real drive manages.
 - **A3000 speed.** A game's Settings can run it at the speed of an A3000's 8 MHz ARM2 rather than a 25 MHz ARM3, for a game made for the slower machine, and can load its floppies at a real drive's speed.
-- **A CRT look.** CRT-Royale-Pi and CRT-Pi in the Shaders menu draw the picture as a monitor of the time showed it, with scanlines and a phosphor mask.
 - **Save states.** Every game gets 3 save slots, each one holding the whole machine as it was at that moment along with a screenshot of it. One slot is saved every 30 seconds of play, and a game with saves opens on all 3 side by side, so you can continue one or start a new game in an empty slot.
 - **Search** across the game lists, and each tab shows how many of its games match.
 - **Disc switching** from the Disk Drive menu or with Ctrl, Alt and a number, and auto switch points, which change the disc by themselves when a game shows the screen that asks for it. Select Disk in the same menu puts any disc image in the drive.
@@ -82,26 +81,28 @@ Restoring a save puts back anything the game wrote to a floppy too, while files 
 - **Crop to Window** for a game that plays in the RISC OS desktop: the picture is cropped to the game's windows, leaving out the icon bar and the desktop around them, and it follows them as they open, close and move. The Game menu turns it on or off for any game, your own included, and the games that need it start with it on.
 - **Copy protection as the disc has it**, so the games' own disc checks pass.
 
-![Lemmings' first level in a window of its own, under its Game and Saves menus](docs/game.png)
+<p align="center"><img src="docs/lemmings_shaders.png" width="642" alt="Lemmings' first level in a window of its own through a CRT shader, under its Game and Saves menus"></p>
+
+- **Shaders.** CRT-Royale-Pi, an optimized version of CRT-Royale by TroggleMonkey, and CRT-Pi, a lightweight CRT filter by davej, provide a closer experience to playing the games on a CRT monitor, available under the Game -> Shaders menu.
 
 ## What works
 
 Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 26.04), a Raspberry Pi 400 with 64-bit Raspberry Pi OS 13, and Windows 10.
 
-- All 110 games boot from their first disc to their own screens. Against reference pictures at 35 and 65 seconds, 101 match, Chocks Away Compendium gets further than its pictures, which stop at an error, and plays, 6 get there by 95 seconds (Black Angel, Empire Soccer 94, Powerband, Raw Power, Silver Ball and Thundermonk), and Botkiller 2 and the Risc PC version of Speedball 2 load from their 1.6MB discs
+- The 110 games that take over the screen boot from their first disc to their own screens within 65 seconds, whether a title, a demo, a menu or a request for their next disc, Botkiller 2 and the Risc PC version of Speedball 2 from their 1.6MB discs
 - The games' disc checks pass, among them Hero Quest's, Fire and Ice's and Blaston's, and what Jet Fighter writes to its boot disc is kept
 - Blank discs format, take files and read back after a fresh power on
 - The 11 Acorn Arcade games and 12 PackMan games in Classics install and start, Star Fighter 3000 and Meteors full screen
+- Elite reaches its title 8 seconds after power on, where loading at a real drive's speed takes 39
 - Mah-Jong Patience, Premier Manager and SimCity, which play in the RISC OS desktop, start in their windows and are shown cropped to them, as Haunted House is
 - The 9 games with a hard disc installer install onto a folder the machine reads directly and start from there: Black Angel, Break 147 & Superpool, Carnage Inc, Drop Ship, The Exotic Adventures of Sylvia Layne, Haunted House, Raw Power, Saloon Cars Deluxe and Stunt Racer 2000
-- On the Pi 400 the emulated machine can run about 2.5 times faster than a real one, and Lemmings holds full speed in a game window
+- On the Pi 400 the emulated machine can run about 2.5 times faster than a real one, and Lemmings holds full speed in a window and full screen
 
 ### Not yet
 
 - Joysticks aren't supported
 - Champions installs with 3 of its 5 discs, the ones JASPP's package has
 - DarkWood, which needs a Risc PC, and Phaethon, which needs two drives, aren't in Classics, nor are the PackMan games that need SharedCLibrary 5, more than 4MB or a screen mode an Archimedes can't show (`presets/README.md` lists them)
-- ArcElite takes 39 seconds to load from its floppy
 
 ## Install
 
@@ -109,7 +110,7 @@ Each system has an installer, drawn with [ROOGUI](https://github.com/jameshansen
 
 ### Raspberry Pi
 
-It needs 64-bit Raspberry Pi OS 13 (trixie) or newer with the desktop, SDL2 (`sudo apt install libsdl2-2.0-0` if it isn't there) and `curl`. It's tested on a Pi 400. PiArcBoot takes about 6 MB, and a game under 1 MB a disc. In a terminal:
+It needs 64-bit Raspberry Pi OS 13 (trixie) or newer with the desktop, SDL2 and libcurl, which Raspberry Pi OS has (`sudo apt install libsdl2-2.0-0 libcurl4` if they aren't there). It's tested on a Pi 400. PiArcBoot takes about 9 MB, and a game under 1 MB a disc. In a terminal:
 
 ```bash
 curl -fsSL https://github.com/jameshansen/PiArcBoot/releases/latest/download/install.sh | sh
@@ -121,7 +122,7 @@ Running the installer again offers to update or remove PiArcBoot. Removing it ke
 
 ### Linux PC
 
-The same command installs PiArcBoot on a 64-bit PC with a Linux desktop as new as Ubuntu 24.04 or Debian 13, with SDL2 and `curl`. Or download `PiArcBoot-Installer-Linux-x86-64.zip`, extract it and double-click `Install PiArcBoot`.
+The same command, which needs `curl`, installs PiArcBoot on a 64-bit PC with a Linux desktop as new as Ubuntu 24.04 or Debian 13. It needs SDL2 and libcurl (`sudo apt install libsdl2-2.0-0 libcurl4` if they aren't there). Or download `PiArcBoot-Installer-Linux-x86-64.zip`, extract it and double-click `Install PiArcBoot`.
 
 ### Windows
 
@@ -177,7 +178,7 @@ The **Disk Drive** menu puts one of the game's discs in the drive. To set an aut
 
 Games are kept in `~/.local/share/piarcboot/games`, a folder each, with their disc images, saved changes (`.sav`), save states (`saves/`), icon and settings.
 
-![The Settings for Gods, with its two discs and the second one set to read only](docs/settings.png)
+<p align="center"><img src="docs/settings.png" alt="The Settings for Gods, with its two discs and the second one set to read only"></p>
 
 ## How it works
 
@@ -187,7 +188,7 @@ The machine runs 25 million cycles to a second of its own time, a fixed rate rat
 
 A game boots behind the splash screen with the machine running flat out. A disc that boots gets Shift held until it is first read. For any other disc, ROO311's HostLink module runs the application once the desktop is up, the way a double-click would. HostLink then reports a screen mode change when the game takes the screen, an error box when it asks for a disc, or a new desktop task, whose icon bar icon it clicks for a game that waits to be clicked. The splash stays up until one of those. HostLink also reports where the windows on the screen are, five times a second when they change, as it walks up the Wimp's window stack from the icon bar, and with Crop to Window on, the picture is cropped to the area they cover. A game that plays in the desktop has its icon clicked once its floppy drive has been still for a second.
 
-The floppy controller is a WD1772 written from its data sheet, with the disc turning under it at 300 rpm and each sector passing the head at its place on the track. A JFD image records each sector's place, size, number and CRC errors, which is how JASPP keeps a disc's copy protection, so the games' checks find what they would on the real disc. Botkiller 2 and the Risc PC version of Speedball 2 come on 1.6MB discs, so for those two the machine becomes an A5000, a later Archimedes, with its 82C711, whose 765 floppy controller is also written from its data sheet.
+The floppy controller is a WD1772 written from its data sheet, with the disc turning under it at 300 rpm and each sector passing the head at its place on the track. A JFD image records each sector's place, size, number and CRC errors, which is how JASPP keeps a disc's copy protection, so the games' checks find what they would on the real disc. Botkiller 2 and the Risc PC version of Speedball 2 come on 1.6MB discs, so for those two the machine becomes an A5000, a later Archimedes, with its 82C711, whose 765 floppy controller is also written from its data sheet. A track laid out as a format program lays one down, with nothing copy protection adds, is read faster than a real drive manages, the sector asked for coming under the head at once and its bytes 4 microseconds apart, while the game runs at its usual speed. Any other track keeps a real drive's timing, and a game's Settings can give every track that timing.
 
 Disc images are never written to. What a game writes goes to `<image>.sav` beside the image and is laid back over it when the game next starts.
 
