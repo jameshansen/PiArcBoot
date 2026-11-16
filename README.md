@@ -44,7 +44,7 @@ This is a passion project, making some of these old favourites easy to pick up a
 PiArcBoot lists 113 JASPP games and 23 Classics, including:
 
 - **JASPP**: Lemmings, Lemmings 2: The Tribes, Gods, Magic Pockets, Cannon Fodder, SpeedBall 2, Sensible Soccer, Chocks Away, Lotus Turbo Challenge 2, Populous, SimCity, James Pond, Fire & Ice, Chuck Rock and Pac-mania
-- **Classics**: Elite, Star Fighter 3000, Hamsters, Asylum and Cycloids
+- **Classics**: Elite, Star Fighter 3000, Asylum and Oddball.
 
 The full list is in [GAMES.md](GAMES.md), with every game's year, publisher and how it installs.
 
