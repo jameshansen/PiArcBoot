@@ -2,7 +2,7 @@
 
 <h1 align="center">PiArcBoot</h1>
 
-<p align="center"><b>Acorn Archimedes games on the Raspberry Pi.</b><br>A free launcher that installs the games released by JASPP, the Archimedes Software Preservation Project, and boots each one straight into the game on an emulated Archimedes, with its own icon and shortcuts. It needs no commercial ROM.</p>
+<p align="center"><b>Acorn Archimedes games on the Raspberry Pi.</b><br>A free launcher that installs the games released by JASPP, the Archimedes Software Preservation Project, and boots each one straight into the game on an emulated Archimedes based on [ArcEm](https://github.com/ArcEm-emu/ArcEm), with its own icon and shortcuts. It needs no commercial ROM.</p>
 
 <p align="center"><a href="../../releases/latest"><b>Download for Raspberry Pi OS, Linux or Windows</b></a></p>
 
@@ -24,9 +24,9 @@ irm https://github.com/jameshansen/PiArcBoot/releases/latest/download/install.ps
 
 ## Background
 
-I grew up with some of these games on the Acorn Archimedes. I've also been building tools that make it easy to launch some of my, and my kids' favourite games on the Raspberry Pi, such as [Knytt](https://github.com/jameshansen/PiKnytt) and [Klass of 99](https://github.com/jameshansen/PiKlassOf99), and sharing them here for other fans of these lesser known titles.
+I started building tools that make it easy to launch some of my, and my kids' favourite games on the Raspberry Pi, such as [Knytt](https://github.com/jameshansen/PiKnytt) and [Klass of 99](https://github.com/jameshansen/PiKlassOf99), and sharing them here for other fans of these lesser known titles.
 
-I wanted to add the RISC OS version of Lemmings to that list, along with the other games [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservation Project, has released with their publishers' permission. The problem was making it just run-and-go - the games needed a ROM with RISC OS to start, and the RISC OS 3.11 ROM is commercial, and setting up an emulator can be complicated.
+However, some classic RISC OS games the kids used to play on RISC OS Open were missing on Raspberry Pi OS. The idea began first with the idea of just making the RISC OS version of Lemmings have a similar custom installer, but I decided to expand this project to include the other games [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservation Project, has released with their publishers' permission. The problem was making it just run-and-go - the games needed a ROM with RISC OS to start, and the RISC OS 3.11 ROM is commercial, and setting up an emulator can be complicated.
 
 PiArcBoot solves these problems - it is a super easy to use emulator built around running these games, starting the game directly with no setup or technical knowledge required. Even the ROM issue was solved with [ROO311](https://github.com/jameshansen/ROO311), a free ROM made from the RISC OS Open sources.
 
