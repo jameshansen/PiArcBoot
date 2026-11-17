@@ -658,6 +658,9 @@ static int draw_about(int x, int y, int w)
 		  "https://github.com/libretro/glsl-shaders" },
 		{ "JASPP", "The games, released with their publishers' permission, and the JFD disc image format",
 		  "Each game remains its publisher's", JASPP_URL },
+		{ "ADFFS", "Authorized Game Protection Bypass for Alone in the Dark, Battle Chess, Empire Soccer 94 and "
+		  "Oh, No! More Lemmings, from ADFFS by Jon Abbott for JASPP",
+		  "Freeware from JASPP", JASPP_URL },
 	};
 	char line[200];
 	size_t i;

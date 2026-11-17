@@ -271,10 +271,102 @@ void emu_mouse(int dx, int dy, int buttons)
 	host_buttons = buttons;
 }
 
+/* ---- Patches ----
+   Fixes to a game's code, from its presets (presets/README.md). Each is a word at an address that,
+   once it holds what the game put there, becomes the new words, with the lines after it that start
+   with + written at the same time. They're looked for at the start of each centisecond through the
+   memory map as the supervisor sees it, so a patch lands once the game has loaded or unpacked that
+   code, wherever its pages are, and again if it loads it again. */
+
+#define MAX_PATCHES 64
+static struct
+{
+	ARMword at, old, words[32];
+	int n, with;
+} patches[MAX_PATCHES];
+static int n_patches;
+
+/* The word at a logical address into *w, as the supervisor reads it: 0 if nothing is there. Pages
+   in the first 512K of RAM, which the screen can be in, go through ArcEm's functions, the others
+   straight to the RAM. */
+static int patch_read(ARMul_State *state, ARMword at, ARMword *w)
+{
+	FastMapEntry *entry = FastMap_GetEntryNoWrap(state, at &= UINT32_C(0x3fffffc));
+	FastMapRes res = FastMap_DecodeRead(entry, FASTMAP_MODE_MBO | FASTMAP_MODE_SVC);
+
+	if (FASTMAP_RESULT_DIRECT(res))
+		*w = *FastMap_Log2Phy(entry, at);
+	else if (FASTMAP_RESULT_FUNC(res))
+		*w = FastMap_LoadFunc(entry, state, at);
+	else
+		return 0;
+	return 1;
+}
+
+/* And written there, as the processor would, so that code already decoded from it is decoded again */
+static void patch_write(ARMul_State *state, ARMword at, ARMword w)
+{
+	FastMapEntry *entry = FastMap_GetEntryNoWrap(state, at &= UINT32_C(0x3fffffc));
+	FastMapRes res = FastMap_DecodeWrite(entry, FASTMAP_MODE_MBO | FASTMAP_MODE_SVC);
+
+	if (FASTMAP_RESULT_DIRECT(res))
+	{
+		ARMword *p = FastMap_Log2Phy(entry, at);
+
+		*p = w;
+		FastMap_PhyClobberFunc(state, p);
+	}
+	else if (FASTMAP_RESULT_FUNC(res))
+		FastMap_StoreFunc(entry, state, at, w, FASTMAP_ACCESSFUNC_STATECHANGE);
+}
+
+void emu_patches_clear(void)
+{
+	n_patches = 0;
+}
+
+/* "<address> <original word> <new words>" or "+ <address> <new words>", in hex */
+void emu_patch(const char *text)
+{
+	const char *line = text;
+	char *end;
+	unsigned long v;
+	int with = *line == '+';
+
+	if (n_patches == MAX_PATCHES || (with && !n_patches))
+		return;
+	patches[n_patches].with = with;
+	patches[n_patches].at = (ARMword)strtoul(line + with, &end, 16);
+	patches[n_patches].old = with ? 0 : (ARMword)strtoul(end, &end, 16);
+	patches[n_patches].n = 0;
+	for (line = end; patches[n_patches].n < 32 && (v = strtoul(line, &end, 16), end != line); line = end)
+		patches[n_patches].words[patches[n_patches].n++] = (ARMword)v;
+	if (patches[n_patches].n)
+		n_patches++;
+	else
+		fprintf(stderr, "piarcboot: a patch that makes no sense: %s\n", text);
+}
+
+static void patches_apply(ARMul_State *state)
+{
+	ARMword w;
+	int i, j, on = 0;
+
+	for (i = 0; i < n_patches; i++)
+	{
+		if (!patches[i].with)
+			on = patch_read(state, patches[i].at, &w) && w == patches[i].old;
+		for (j = 0; on && j < patches[i].n; j++)
+			patch_write(state, patches[i].at + (ARMword)j * 4, patches[i].words[j]);
+		if (on && tracing)
+			fprintf(stderr, "patched %x\n", (unsigned)patches[i].at);
+	}
+}
+
 /* ---- The script ---- */
 
 enum { S_WAIT, S_UNTILREAD, S_UNTILERROR, S_UNTILIDLE, S_KEY, S_MOUSE, S_BUTTON, S_DISC, S_SHOT, S_CMOS, S_RUN, S_CLICK, S_POINTER,
-	S_SAVESTATE, S_LOADSTATE };
+	S_SAVESTATE, S_LOADSTATE, S_PEEK };
 
 typedef struct
 {
@@ -401,6 +493,10 @@ void emu_script_line(const char *line)
 		add(S_SAVESTATE, 0, 0, rest);
 	else if (!strcmp(cmd, "loadstate") && n >= 1)   /* and back from one */
 		add(S_LOADSTATE, 0, 0, rest);
+	else if (!strcmp(cmd, "peek") && n >= 1)        /* the words at an address, as the processor sees it, to the trace */
+		add(S_PEEK, (int)strtoul(a, NULL, 16), n == 2 ? atoi(b) : 1, NULL);
+	else if (!strcmp(cmd, "dump") && n == 2 && strchr(b, ' '))      /* <address> <words> <file>: those words to a file, 0 where nothing is */
+		add(S_PEEK, (int)strtoul(a, NULL, 16), atoi(b), strchr(b, ' ') + 1);
 	else
 		fprintf(stderr, "piarcboot: a script step that makes no sense: %s\n", line);
 }
@@ -519,6 +615,33 @@ static void script_run(void)
 				if (s->op == S_SAVESTATE ? state_save(s->s, 1, NULL, 0, 0) : state_load(s->s, why, sizeof why))
 					fprintf(stderr, "piarcboot: can't %s the state %s: %s\n", s->op == S_SAVESTATE ? "save" : "restore", s->s,
 						s->op == S_SAVESTATE ? "it couldn't be written" : why);
+				break;
+			}
+
+			case S_PEEK:
+			{
+				FILE *f = s->s ? fopen(s->s, "wb") : NULL;
+				int i;
+
+				for (i = 0; i < s->b; i++)
+				{
+					ARMword w;
+					int there = patch_read(&statestr, (ARMword)s->a + (ARMword)i * 4, &w);
+
+					if (f)
+					{
+						ARMword v = there ? w : 0;
+						uint8_t le[4] = { (uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24) };
+
+						fwrite(le, 1, 4, f);
+					}
+					else if (there)
+						fprintf(stderr, "peek %x: %08lx\n", (unsigned)(s->a + i * 4), (unsigned long)w);
+					else
+						fprintf(stderr, "peek %x: not mapped\n", (unsigned)(s->a + i * 4));
+				}
+				if (f)
+					fclose(f);
 				break;
 			}
 
@@ -775,6 +898,7 @@ enum { HL_HELLO = 0x20, HL_POLL, HL_EVENT, HL_POINTER };
 
 int emu_hostlink, emu_host_modes, emu_host_clicked, emu_host_missed, emu_host_errors, emu_host_tasks, emu_host_error_open, emu_host_polls, emu_host_mode;
 int emu_host_nwins, emu_host_wins[31][4];
+int emu_host_game_task[32], emu_host_game_tasks, emu_host_game_tasks_seen;
 int emu_host_modes_at_run = -1, emu_host_errors_at_run = -1, emu_host_tasks_at_run = -1, emu_host_vidc_at_run = -1;
 static struct
 {
@@ -870,7 +994,20 @@ static bool hostlink_swi(ARMul_State *state, unsigned number)
 			emu_host_error_open = state->Reg[1] == 1;
 		}
 		else if (state->Reg[0] == 5)
+		{
 			emu_host_tasks++;
+			if (emu_host_tasks_at_run >= 0 && emu_host_game_tasks < 32)   /* started since the game was: one of the game's */
+			{
+				emu_host_game_task[emu_host_game_tasks++] = (int)state->Reg[1];
+				emu_host_game_tasks_seen++;
+			}
+		}
+		else if (state->Reg[0] == 7)    /* a task stopped */
+		{
+			for (i = 0; i < (size_t)emu_host_game_tasks && emu_host_game_task[i] != (int)state->Reg[1]; i++);
+			if (i < (size_t)emu_host_game_tasks)
+				emu_host_game_task[i] = emu_host_game_task[--emu_host_game_tasks];
+		}
 		else if (state->Reg[0] == 6)    /* the windows on the screen: how many, then each one's outline */
 		{
 			ARMword at = state->Reg[1], n = ARMul_LoadWordS(state, at);
@@ -961,6 +1098,7 @@ void emu_step(void)
 
 	if (!started)
 		return;
+	patches_apply(state);
 	script_run();
 	keys_update();
 	mouse_update();

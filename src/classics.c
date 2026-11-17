@@ -694,6 +694,11 @@ int preset_crop(const game_t *g)
 /* presets/<game>.ini: a key=value line for each setting, with # starting a comment line */
 int preset_setting(const char *id, const char *key, char *buf, size_t size)
 {
+	return preset_nth(id, key, 0, buf, size);
+}
+
+int preset_nth(const char *id, const char *key, int nth, char *buf, size_t size)
+{
 	char name[160], path[1024];
 	char *text, *line, *next;
 	size_t klen = strlen(key);
@@ -710,7 +715,7 @@ int preset_setting(const char *id, const char *key, char *buf, size_t size)
 		line[strcspn(line, "\r")] = 0;
 		while (*line == ' ' || *line == '\t')
 			line++;
-		if (!strncmp(line, key, klen) && line[klen] == '=')
+		if (!strncmp(line, key, klen) && line[klen] == '=' && !nth--)
 		{
 			snprintf(buf, size, "%s", line + klen + 1);
 			found = 1;

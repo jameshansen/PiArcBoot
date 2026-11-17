@@ -29,6 +29,8 @@ void emu_audio_open(void);
 void emu_audio_fade_in(int ms);                 /* the sound from here rises from nothing to full over that long */
 void emu_mouse(int dx, int dy, int buttons);
 void emu_script(const char *text);
+void emu_patch(const char *line);       /* a fix to the game's code, from its presets */
+void emu_patches_clear(void);
 void emu_script_line(const char *line);
 int emu_script_busy(void);
 void emu_script_stop(void);
@@ -52,6 +54,7 @@ extern int emu_host_mode;       /* the mode the last one was to */
 extern int emu_host_errors;     /* error boxes it has seen open */
 extern int emu_host_error_open; /* one is open just now */
 extern int emu_host_tasks;      /* tasks it has seen start in the desktop */
+extern int emu_host_game_task[32], emu_host_game_tasks, emu_host_game_tasks_seen;    /* those started since the game was, still going, and how many in all */
 extern int emu_host_polls;      /* times its desktop task has asked for a command, 5 a second while the desktop runs */
 extern int emu_host_modes_at_run, emu_host_errors_at_run, emu_host_tasks_at_run;      /* those counts when it last took up a command to start, or -1 */
 extern int emu_host_vidc_at_run;        /* and machine_mode_sets then */
@@ -263,6 +266,7 @@ typedef struct
 /* A setting from presets/<game>.ini beside the program, which presets/README.md in the repository
    describes. 1 with its value in buf if the game's file has the key. */
 int preset_setting(const char *id, const char *key, char *buf, size_t size);
+int preset_nth(const char *id, const char *key, int nth, char *buf, size_t size);     /* the nth line with that key, from 0 */
 int preset_crop(const game_t *g);
 #define CROPS(g) ((g)->crop >= 0 ? (g)->crop : preset_crop(g))  /* shown cropped to its windows, as its settings or else its presets say */
 const char *needs_support(const adfs_file_t *files, int n);     /* the support pack their !Run files ask for, or "" */

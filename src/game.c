@@ -47,6 +47,7 @@ static SDL_Texture *pic, *big, *icon_tex;        /* the picture, and the picture
 static int pic_w, pic_h, big_w, big_h;
 static int fullscreen, captured, told_capture;
 static int crop, crop_fitted;           /* just the windows on the screen are shown; the window has been fitted to them */
+static int waits;                       /* the game waits on the desktop for the player, as its presets say click=0 */
 static Uint32 refit_at;                 /* when the window takes the shape the windows have kept for a second, or 0 */
 static struct { int begun, shown_at, polls, polled_at, away_from, modes, mode, had_window, had_screen, bare_from; } left;   /* for telling the game has quit to the desktop */
 static int crop_from, now_cs;           /* the centisecond cropping starts, a second after the game is going; the machine's now */
@@ -772,6 +773,7 @@ static int restore_slot(int k)
 	}
 	emu_script_stop();
 	memset(&left, 0, sizeof left);   /* what the game had is told again from the restored machine */
+	emu_host_game_tasks = emu_host_game_tasks_seen = 0;     /* and its tasks aren't known, so one that waits on the desktop stays open */
 	swap_pending = 0;
 	in = machine_disc_path(0);
 	for (cur_disc = -1, i = 0; in && i < game.ndiscs; i++)
@@ -1083,7 +1085,9 @@ static void pick_disc(void)
    that plays in the desktop has quit once its windows have closed with the screen in the same mode,
    even with its icon left on the icon bar. Either way it has to last 3 seconds with no error box
    open and the floppy drive still, from 10 seconds or more after the game was shown, as a disc that
-   fails to boot reaches the desktop sooner and may open and close a box of the desktop's there. */
+   fails to boot reaches the desktop sooner and may open and close a box of the desktop's there.
+   A game that waits on the desktop goes back there between games, as E-Type II does after a race,
+   so it has quit only once the tasks it started have all stopped, as HostLink says they do. */
 static int game_left(int cs)
 {
 	int live, bare, wins = 0, sh = emu_h * (emu_dbl ? 4 : 2), i;
@@ -1113,10 +1117,11 @@ static int game_left(int cs)
 	}
 	else if (cs - left.away_from >= 300 && emu_host_modes != left.modes)
 		left.had_screen = 1;
-	bare = live && !emu_host_error_open && !machine_motor_on() && (left.had_screen || (!wins && emu_host_mode == left.mode));
+	bare = live && !emu_host_error_open && !machine_motor_on() &&
+	       (waits ? emu_host_game_tasks_seen && !emu_host_game_tasks : left.had_screen || (!wins && emu_host_mode == left.mode));
 	if (!bare)
 		left.bare_from = cs;
-	return (left.had_screen || left.had_window) && left.bare_from - left.shown_at >= 1000 && cs - left.bare_from >= 300;
+	return (waits || left.had_screen || left.had_window) && left.bare_from - left.shown_at >= 1000 && cs - left.bare_from >= 300;
 }
 
 /* The menus' titles: Game, Saves, Disk Drive unless the game's settings hide it, and Settings.
@@ -1528,7 +1533,7 @@ static void app_events(int cs)
 
 		if (preset_setting(game.preset[0] ? game.preset : game.id, "click", click, sizeof click) && !atoi(click))
 		{
-			app_ready(0);
+			app_ready(1);   /* with its disc's folder closed, as for a click */
 			return;
 		}
 	}
@@ -1641,6 +1646,7 @@ int game_main(const char *id, const char *test_script)
 	int held = 0;           /* frames a test has waited with the machine stopped, on the selector or paused, which its script's times count too */
 	Uint32 splash_until = 0;        /* after a slot is picked, the splash stays up till then, SDL_GetTicks's time, and the game waits behind it */
 	int run_for = getenv("PIARCBOOT_RUN_FOR") ? atoi(getenv("PIARCBOOT_RUN_FOR")) : 0, lost = 0, shown_cs = 0, drawn = 0;
+	int shown_once = 0;
 	menu_item_t items[MAX_ITEMS], bar_items[MAX_ITEMS];
 	const char *titles[MENUS];
 	int n_items;
@@ -1718,6 +1724,10 @@ int game_main(const char *id, const char *test_script)
 	if (game.classic || game.apps)  /* a 640 by 512 desktop in 256 colours, mode 21 on a multisync monitor, for the games that play in it */
 		machine_cmos_desktop(cmos, 21, 1);
 	crop = CROPS(&game);
+	waits = preset_setting(game.preset[0] ? game.preset : game.id, "click", path, sizeof path) && !atoi(path);
+	emu_patches_clear();    /* the fixes to its code its presets have, for once it's in memory */
+	for (i = 0; preset_nth(game.preset[0] ? game.preset : game.id, "patch", i, path, sizeof path); i++)
+		emu_patch(path);
 	/* The desktop in the screen mode a game's presets name, for one that asks for a mode, and
 	   otherwise for a game shown cropped to its windows, which plays in the desktop, the Classics'
 	   640 by 512 in 256 colours */
@@ -2031,6 +2041,7 @@ int game_main(const char *id, const char *test_script)
 				app.run_at = -1;
 				app.mode = mode;
 				emu_host_modes_at_run = emu_host_errors_at_run = emu_host_tasks_at_run = emu_host_vidc_at_run = -1;
+				emu_host_game_tasks = emu_host_game_tasks_seen = 0;
 				machine_disc_reads = machine_mode_sets = 0;
 				booting = emu_mute = 1;
 				cs = last_check = modes_at_read = crop_from = cur_disc = swap_pending = played = drive_on = changed = sig_at = 0;
@@ -2067,6 +2078,14 @@ int game_main(const char *id, const char *test_script)
 			shown = SDL_GetPerformanceCounter();
 			shown_cs = cs;
 			emu_mute = 0;
+			if (getenv("PIARCBOOT_SCRIPT") && !shown_once++)    /* PIARCBOOT_SCRIPT=<file>: a test script for the machine, from here, for the tests */
+			{
+				char *text = (char *)file_read(getenv("PIARCBOOT_SCRIPT"), NULL);
+
+				if (text)
+					emu_script(text);
+				free(text);
+			}
 			start = SDL_GetPerformanceCounter() - (Uint64)cs * freq / 100;
 			if (!fullscreen && !own_size())
 				fit_window();

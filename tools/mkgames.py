@@ -32,6 +32,8 @@ def notes(gid, fdc=0, support=False):
         n.append("1.6MB disc")
     if support or preset(gid, "support"):
         n.append("Support pack")
+    if preset(gid, "patch"):
+        n.append("No manual check")
     return ", ".join(n)
 
 
@@ -122,7 +124,9 @@ lines = ["# Games", "",
          "- **Crop to Desktop Window**: it plays in the RISC OS desktop and is shown cropped to its windows.",
          "- **Support pack**: it installs with ROO311's support pack, the newer Window Manager and the Toolbox it "
          "needs.",
-         "- **1.6MB disc**: its disc is a high density one, so the machine becomes an A5000 to read it.", "",
+         "- **1.6MB disc**: its disc is a high density one, so the machine becomes an A5000 to read it.",
+         "- **No manual check**: it skips the question it asks from its manual, or for another game's disc,"
+         " with the change to its code that ADFFS, JASPP's floppy disc emulator, makes.", "",
          "## JASPP", "",
          "Released by [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservation Project, with their "
          "publishers' permission, and listed here once they start on ROO311.", "",

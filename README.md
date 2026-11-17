@@ -80,6 +80,7 @@ Restoring a save puts back anything the game wrote to a floppy too, while files 
 - **Saves are kept** in a file beside each disc image, and the image itself is never changed. Any disc can be made read only.
 - **Crop to Desktop Window** for a game that plays in the RISC OS desktop: the picture is cropped to the game's windows, leaving out the icon bar and the desktop around them, and it follows them as they open, close and move. The Settings menu or a game's Settings turns it on or off for any game, your own included, and the games that need it start with it on.
 - **Copy protection as the disc has it**, so the games' own disc checks pass.
+- **No manual checks.** Alone in the Dark, Battle Chess and Empire Soccer 94 skip the questions they ask from their manuals, and Oh, No! More Lemmings starts without the original Lemmings disc.
 
 <p align="center"><img src="docs/lemmings_shaders.png" alt="Lemmings' first level in a window of its own through a CRT shader, under its Game and Saves menus"></p>
 
@@ -166,7 +167,7 @@ Drag the window's edge or maximize it and the picture grows to fill the frame, k
 
 **Shaders** in the Game menu draws the picture as a CRT monitor showed it. CRT-Royale-Pi has the scanlines, phosphor mask and glow of a real tube, and CRT-Pi is a lighter scanline and mask shader. A Raspberry Pi 400 keeps up with either. Off draws the picture as it is. The choice holds for every game, and while a shader is on, 1x Scale isn't available.
 
-Each game opens in one window at a time. Starting it again while it's open says so instead of opening a second copy. When a game quits to the RISC OS desktop, from its own menu or by closing its windows, the window closes too.
+Each game opens in one window at a time. Starting it again while it's open says so instead of opening a second copy. When a game quits to the RISC OS desktop, from its own menu or by closing its windows, the window closes too. A game that waits on the desktop with its options on its icon bar menu, as E-Type II does, goes back there after each game, and its window closes once Quit is chosen from that menu.
 
 **Crop to Desktop Window** in the Settings menu shows just the game's windows, for a game that plays in the RISC OS desktop, and the pointer then goes where yours is over the picture. The window takes their shape and follows it as they change. PiArcBoot remembers the choice for each game.
 
@@ -188,7 +189,7 @@ The machine is [ArcEm](https://github.com/ArcEm-emu/ArcEm)'s, set up as an Archi
 
 The machine runs 25 million cycles to a second of its own time, a fixed rate rather than one measured against the host, so a game takes the same machine time on every computer and a test script gives the same result every time. The game window keeps it to real time a centisecond at a time.
 
-A game boots behind the splash screen with the machine running flat out. A disc that boots gets Shift held until it is first read. For any other disc, ROO311's HostLink module runs the application once the desktop is up, the way a double-click would. HostLink then reports a screen mode change when the game takes the screen, an error box when it asks for a disc, or a new desktop task, whose icon bar icon it clicks for a game that waits to be clicked. The splash stays up until one of those. HostLink also reports where the windows on the screen are, five times a second when they change, as it walks up the Wimp's window stack from the icon bar, and with Crop to Desktop Window on, the picture is cropped to the area they cover. A game that plays in the desktop has its icon clicked once its floppy drive has been still for a second.
+A game boots behind the splash screen with the machine running flat out. A disc that boots gets Shift held until it is first read. For any other disc, ROO311's HostLink module runs the application once the desktop is up, the way a double-click would. HostLink then reports a screen mode change when the game takes the screen, an error box when it asks for a disc, or a new desktop task, whose icon bar icon it clicks for a game that waits to be clicked, and it reports a task that stops, which is how a game that waits on the desktop is known to have quit. The splash stays up until one of those. HostLink also reports where the windows on the screen are, five times a second when they change, as it walks up the Wimp's window stack from the icon bar, and with Crop to Desktop Window on, the picture is cropped to the area they cover. A game that plays in the desktop has its icon clicked once its floppy drive has been still for a second.
 
 The floppy controller is a WD1772 written from its data sheet, with the disc turning under it at 300 rpm and each sector passing the head at its place on the track. A JFD image records each sector's place, size, number and CRC errors, which is how JASPP keeps a disc's copy protection, so the games' checks find what they would on the real disc. Botkiller 2 and the Risc PC version of Speedball 2 come on 1.6MB discs, so for those two the machine becomes an A5000, a later Archimedes, with its 82C711, whose 765 floppy controller is also written from its data sheet. A track laid out as a format program lays one down, with nothing copy protection adds, is read faster than a real drive manages, the sector asked for coming under the head at once and its bytes 4 microseconds apart, while the game runs at its usual speed. Any other track keeps a real drive's timing, and a game's Settings can give every track that timing.
 
@@ -204,7 +205,9 @@ The hard disc installers of the games that came with one copy files from the gam
 
 Xenon 2's package holds its first disc only as its application, beside the image of its copy protected second disc, so Install puts the application in the folder HostFS shows the machine, as the game's help says to install it on a hard disc, with a `!Run` of PiArcBoot's in place of the package's, and the second disc goes in the drive.
 
-What PiArcBoot knows about particular games is in `presets/`, not its code. A game can have files that Install adds to its own, such as the choices file that starts Star Fighter 3000 full screen where it would otherwise open in a desktop window, the files its hard disc installer copies, and settings: the support pack it needs, keys to press once it has started (Escape puts Meteors on the whole screen), the screen mode for a game that plays in the desktop (MODE 15 for Black Angel), or why a PackMan game is left out. `presets/README.md` describes them.
+What PiArcBoot knows about particular games is in `presets/`, not its code. A game can have files that Install adds to its own, such as the choices file that starts Star Fighter 3000 full screen where it would otherwise open in a desktop window, the files its hard disc installer copies, and settings: the support pack it needs, keys to press once it has started (Escape puts Meteors on the whole screen), the screen mode for a game that plays in the desktop (MODE 15 for Black Angel), changes to its code that skip a manual check, or why a PackMan game is left out. `presets/README.md` describes them.
+
+The changes to a game's code are taken from the boot scripts of ADFFS, JASPP's floppy disc emulator, which makes them once it has loaded the game. Each is a word at an address, the word the game has there and the words it becomes. The machine looks for the game's word at the start of each centisecond, through the same memory map the processor uses, and puts the new words in once it is there, so a change lands as soon as the game has loaded or unpacked that code and only if it is that code. Oh, No! More Lemmings decrypts its loader into a block of the module area, which is at the same place each time it boots from its floppy.
 
 The picture comes from ArcEm's display driver and is scaled by the graphics chip. Sound is ArcEm's mix of the VIDC's 8 channels at 48 kHz. The launcher, the installer and the splash screen use [ROOGUI](https://github.com/jameshansen/ROOGUI), a separate library that draws the RISC OS look from RISC OS Open's sprites and fonts at any display scale.
 
@@ -270,6 +273,8 @@ PiArcBoot was built using [Claude Code](https://claude.com/claude-code) with Cla
 ## Credits
 
 The games are released by [JASPP](https://www.jaspp.org.uk), which also defined the JFD disc image format. Each game remains the work of its authors and publisher, named beside it in the list.
+
+Authorized Game Protection Bypass for Alone in the Dark, Battle Chess, Empire Soccer 94 and Oh, No! More Lemmings comes from ADFFS by Jon Abbott for JASPP.
 
 The Classics are freeware thanks to their authors and rights holders and to [Acorn Arcade](http://www.acornarcade.com/articles/Free_games/index879.html), which obtained the permission to distribute them, to Christopher Bazley, who maintains [Star Fighter 3000](http://starfighter.acornarcade.com) and gives its latest release away, and to the authors of the games in [RISC OS Open's package sources](https://packages.riscosopen.org/).
 

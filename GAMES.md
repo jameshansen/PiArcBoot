@@ -6,6 +6,7 @@ Every game PiArcBoot lists, 120 in its JASPP tab and 16 in Classics. PiArcBoot c
 - **Crop to Desktop Window**: it plays in the RISC OS desktop and is shown cropped to its windows.
 - **Support pack**: it installs with ROO311's support pack, the newer Window Manager and the Toolbox it needs.
 - **1.6MB disc**: its disc is a high density one, so the machine becomes an A5000 to read it.
+- **No manual check**: it skips the question it asks from its manual, or for another game's disc, with the change to its code that ADFFS, JASPP's floppy disc emulator, makes.
 
 ## JASPP
 
@@ -15,10 +16,10 @@ Released by [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservat
 |---|---|---|---|---|
 | Acheton and Kingdom of Hamil | 1987 | Topologika | 1 |  |
 | Adventures, classic compilation | 1988 | Topologika | 2 |  |
-| Alone In the Dark | 1995 | Krisalis Software | 8 | Hard disc install |
+| Alone In the Dark | 1995 | Krisalis Software | 8 | Hard disc install, No manual check |
 | Apocalypse | 1990 | The Fourth Dimension | 2 |  |
 | Avon and Murdac | 1989 | Topologika | 1 |  |
-| Battle Chess | 1993 | Krisalis Software | 2 |  |
+| Battle Chess | 1993 | Krisalis Software | 2 | No manual check |
 | Battle Tank | 1990 | Minerva | 1 |  |
 | Black Angel [16-02-1993] | 1993 | The Fourth Dimension | 2 | Hard disc install |
 | Blaston | 1991 | Eterna | 1 |  |
@@ -45,7 +46,7 @@ Released by [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservat
 | Cycloids | 1993 | Software 42 | 1 |  |
 | Drifter | 1997 | The Fourth Dimension | 2 |  |
 | Drop Ship | 1990 | The Fourth Dimension | 2 | Hard disc install |
-| Empire Soccer 94 | 1995 | Empire Software | 1 |  |
+| Empire Soccer 94 | 1995 | Empire Software | 1 | No manual check |
 | Enter The Realm | 1991 | The Fourth Dimension | 3 |  |
 | E-Type | 1989 | The Fourth Dimension | 2 |  |
 | E-Type Compendium | 1991 | The Fourth Dimension | 4 |  |
@@ -90,7 +91,7 @@ Released by [JASPP](https://www.jaspp.org.uk), the Archimedes Software Preservat
 | Missile Control | 1988 | Minerva | 1 |  |
 | Nebulus | 1992 | Krisalis Software | 1 |  |
 | Nevryon | 1990 | The Fourth Dimension | 2 |  |
-| Oh, No! More Lemmings | 1992 | Krisalis Software | 1 |  |
+| Oh, No! More Lemmings | 1992 | Krisalis Software | 1 | No manual check |
 | Omar Sharif's Bridge | 1992 | Krisalis Software | 1 |  |
 | Orion | 1988 | Minerva | 1 |  |
 | Pac-mania | 1989 | Grandslam Entertainments | 1 |  |
