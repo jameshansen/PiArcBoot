@@ -1,9 +1,12 @@
 /* PiArcBoot: a game window's menu bar, as the system the game is running on makes them.
 
-   On Windows it is the window's own menu. On Linux it is a GTK menu bar, in the desktop's theme,
-   set into the top of the window. GTK is loaded when the game starts and not needed to build,
-   and it draws through X11, which is also what SDL uses on a Raspberry Pi. Where neither can be
-   had, menubar_open returns 0 and the window has no menus, though its keys still work.
+   On Windows it is the window's own menu, and on a Mac the menu bar at the top of the screen,
+   for which this file is built as Objective-C, and which has the Mac's open dialog here too,
+   mac_open_panel. On Linux it is a GTK menu bar, in the desktop's
+   theme, set into the top of the window. GTK is loaded when the game starts and not needed to
+   build, and it draws through X11, which is also what SDL uses on a Raspberry Pi. Where none of
+   these can be had, menubar_open returns 0 and the window has no menus, though its keys still
+   work.
 
    The menus are given as a flat list of items, an item in a submenu naming the item that opens
    it, and a chosen item comes back as its command number from menubar_poll. menubar_titles
@@ -348,6 +351,142 @@ void menubar_width(int w)
 		width = w / factor;
 		gtk.window_resize(strip, width, height);
 	}
+}
+
+#elif defined(__APPLE__)
+
+/* The Mac's own menu bar at the top of the screen, which SDL starts with the application's menu
+   and a Window menu. The game's menus go between those two, and a chosen item comes to the
+   target's choose: as its tag. */
+#import <Cocoa/Cocoa.h>
+
+@interface PiArcBootMenuTarget : NSObject
+- (void)choose:(id)sender;
+@end
+
+@implementation PiArcBootMenuTarget
+- (void)choose:(id)sender
+{
+	chosen = (int)[sender tag];
+}
+@end
+
+static PiArcBootMenuTarget *target;
+static NSMutableArray *added;   /* the menus' items on the bar, taken off before the next ones go on */
+
+int menubar_open(const char *const *names, int n)
+{
+	SDL_SysWMinfo info;
+
+	SDL_VERSION(&info.version);
+	if (!SDL_GetWindowWMInfo(rg_win, &info) || info.subsystem != SDL_SYSWM_COCOA || ![NSApp mainMenu])
+		return 0;
+	if (!target)
+	{
+		target = [PiArcBootMenuTarget new];
+		added = [NSMutableArray new];
+	}
+	menubar_titles(names, n);
+	return 1;
+}
+
+void menubar_set(const menu_item_t *items, int n)
+{
+	@autoreleasepool
+	{
+		NSMenu *bar = [NSApp mainMenu], *menu[MAX_MENUS];
+		NSMutableArray *sub = [NSMutableArray arrayWithCapacity:n];
+		NSInteger at = 1;       /* after the application's own menu */
+		int i;
+
+		for (NSMenuItem *old in added)
+			[bar removeItem:old];
+		[added removeAllObjects];
+		for (i = 0; i < n_titles; i++)
+		{
+			NSString *t = [NSString stringWithUTF8String:titles[i]];
+			NSMenuItem *top = [[NSMenuItem alloc] initWithTitle:t action:nil keyEquivalent:@""];
+
+			menu[i] = [[NSMenu alloc] initWithTitle:t];
+			[menu[i] setAutoenablesItems:NO];
+			[top setSubmenu:menu[i]];
+			[bar insertItem:top atIndex:at++];
+			[added addObject:top];
+		}
+		for (i = 0; i < n; i++)
+			[sub addObject:[NSNull null]];
+		for (i = 0; i < n; i++)         /* the submenus first, so that each is there when its item is made */
+			if (items[i].sub > 0 && items[i].sub <= i && sub[items[i].sub - 1] == [NSNull null])
+			{
+				NSMenu *m = [[NSMenu alloc] initWithTitle:@""];
+
+				[m setAutoenablesItems:NO];
+				sub[items[i].sub - 1] = m;
+			}
+		for (i = 0; i < n; i++)
+		{
+			NSMenu *in;
+			NSMenuItem *it;
+			int has_sub = sub[i] != [NSNull null];
+
+			if (items[i].menu < 0 || items[i].menu >= n_titles)
+				continue;
+			in = items[i].sub > 0 && items[i].sub <= i ? sub[items[i].sub - 1] : menu[items[i].menu];
+			if (items[i].rule)
+				[in addItem:[NSMenuItem separatorItem]];
+			it = [[NSMenuItem alloc] initWithTitle:[NSString stringWithUTF8String:items[i].label]
+							action:has_sub ? nil : @selector(choose:) keyEquivalent:@""];
+			[it setTarget:target];
+			[it setTag:items[i].cmd];
+			[it setState:items[i].checked ? NSControlStateValueOn : NSControlStateValueOff];
+			[it setEnabled:!items[i].shaded];
+			if (has_sub)
+				[it setSubmenu:sub[i]];
+			[in addItem:it];
+		}
+	}
+}
+
+void menubar_event(const SDL_Event *e) { (void)e; }
+
+int menubar_poll(void)
+{
+	int cmd = chosen;
+
+	chosen = 0;
+	return cmd;
+}
+
+/* The bar is the screen's, which hides itself with a full screen window */
+void menubar_show(int on) { (void)on; }
+int menubar_height(void) { return 0; }
+void menubar_width(int w) { (void)w; }
+
+/* The Mac's open dialog, in front of PiArcBoot's window with the keyboard: the files chosen, to
+   be freed, with *n how many, 0 if it was cancelled */
+char **mac_open_panel(const char *message, int several, int *n)
+{
+	char **list = NULL;
+
+	*n = 0;
+	@autoreleasepool
+	{
+		NSOpenPanel *panel = [NSOpenPanel openPanel];
+		NSWindow *was = [NSApp keyWindow];
+
+		[panel setCanChooseFiles:YES];
+		[panel setCanChooseDirectories:NO];
+		[panel setAllowsMultipleSelection:several ? YES : NO];
+		[panel setMessage:[NSString stringWithUTF8String:message]];
+		if ([panel runModal] == NSModalResponseOK)
+			for (NSURL *url in [panel URLs])
+			{
+				list = realloc(list, (*n + 1) * sizeof *list);
+				list[(*n)++] = strdup([url fileSystemRepresentation]);
+			}
+		[was makeKeyAndOrderFront:nil];         /* the keyboard back to the window it was asked from */
+	}
+	return list;
 }
 
 #else

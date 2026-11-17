@@ -1,7 +1,8 @@
 /* Where games live and how they get there.
 
    Every game has a folder of its own under the data folder (~/.local/share/piarcboot/games on
-   Linux, %APPDATA%\PiArcBoot\games on Windows, Data/games beside a portable copy) holding its
+   Linux, ~/Library/Application Support/PiArcBoot/games on a Mac, %APPDATA%\PiArcBoot\games on
+   Windows, Data/games beside a portable copy) holding its
    disc images, its icon and game.ini, its settings. A JASPP game is fetched into one: the package from JASPP's PackMan feed where it
    holds every floppy image of the game, and otherwise the floppy images from JASPP's release
    folder for the game. A game of the user's own is copied into one from the disc images given.
@@ -19,6 +20,10 @@
 #include <shlobj.h>
 #else
 #include <sys/wait.h>
+#endif
+#ifdef __APPLE__
+#include <limits.h>
+#include <mach-o/dyld.h>
 #endif
 #include "piarcboot.h"
 #include "catalog.h"
@@ -59,6 +64,9 @@ const char *store_home_dir(void)
 #ifdef _WIN32
 		else
 			snprintf(dir, sizeof dir, "%s/PiArcBoot", getenv("APPDATA") ? getenv("APPDATA") : ".");
+#elif defined(__APPLE__)
+		else
+			snprintf(dir, sizeof dir, "%s/Library/Application Support/PiArcBoot", getenv("HOME") ? getenv("HOME") : ".");
 #else
 		else if (getenv("XDG_DATA_HOME"))
 			snprintf(dir, sizeof dir, "%s/piarcboot", getenv("XDG_DATA_HOME"));
@@ -96,6 +104,12 @@ const char *store_exe(void)
 	{
 #ifdef _WIN32
 		GetModuleFileNameA(NULL, exe, sizeof exe - 1);
+#elif defined(__APPLE__)
+		char path[PATH_MAX];
+		uint32_t size = sizeof path;
+
+		if (_NSGetExecutablePath(path, &size) || !realpath(path, exe))
+			snprintf(exe, sizeof exe, "piarcboot");
 #else
 		ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
 
@@ -107,10 +121,11 @@ const char *store_exe(void)
 }
 
 /* A file that comes with the program (the ROM, the game icons): beside the program, one folder
-   up (where a build leaves it), or in ../share/piarcboot. Returns buf, or NULL if it isn't there. */
+   up (where a build leaves it), in ../share/piarcboot, or in a Mac application's Resources.
+   Returns buf, or NULL if it isn't there. */
 char *store_asset(const char *name, char *buf, size_t size)
 {
-	static const char *const where[] = { "", "../", "../share/piarcboot/" };
+	static const char *const where[] = { "", "../", "../share/piarcboot/", "../Resources/" };
 	char dir[700];
 	size_t i;
 
@@ -310,7 +325,7 @@ int store_list(game_t **out)
 	return n;
 }
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__APPLE__)
 /* The name a game's window goes by on the desktop, which its menu entry carries too so that
    the taskbar shows the game's icon */
 static void window_class(const char *id, char *buf, size_t size)
@@ -389,9 +404,115 @@ static void shortcut(const char *folder_var, const char *sub, const char *kind, 
 }
 #endif
 
+#ifdef __APPLE__
+#define BUNDLE_ID "io.github.jameshansen.piarcboot"
+
+/* Text for a property list: & < > " as entities */
+static void xml_text(FILE *f, const char *s)
+{
+	for (; *s; s++)
+		if (*s == '&' || *s == '<' || *s == '>' || *s == '"')
+			fprintf(f, "&%s;", *s == '&' ? "amp" : *s == '<' ? "lt" : *s == '>' ? "gt" : "quot");
+		else
+			fputc(*s, f);
+}
+
+/* Text for inside a shell script's single quotes, each ' as '\'' */
+static void sh_text(FILE *f, const char *s)
+{
+	for (; *s; s++)
+		fputs(*s == '\'' ? "'\\''" : (char[2]){ *s, 0 }, f);
+}
+
+/* An icon file holding the game's 128 by 128 PNG as it is, as an 'ic07' */
+static int write_icns(const char *png_path, const char *icns_path)
+{
+	size_t len;
+	uint8_t *png = file_read(png_path, &len), head[16];
+	uint32_t total = (uint32_t)len + 16, entry = (uint32_t)len + 8;
+	FILE *f;
+
+	if (!png)
+		return -1;
+	memcpy(head, "icns", 4);
+	memcpy(head + 8, "ic07", 4);
+	head[4] = (uint8_t)(total >> 24), head[5] = (uint8_t)(total >> 16), head[6] = (uint8_t)(total >> 8), head[7] = (uint8_t)total;
+	head[12] = (uint8_t)(entry >> 24), head[13] = (uint8_t)(entry >> 16), head[14] = (uint8_t)(entry >> 8), head[15] = (uint8_t)entry;
+	f = fopen(icns_path, "wb");
+	if (f)
+	{
+		fwrite(head, 1, sizeof head, f);
+		fwrite(png, 1, len, f);
+		fclose(f);
+	}
+	free(png);
+	return f ? 0 : -1;
+}
+
+/* A game's shortcut on a Mac: a small application of its own, named after the game and with its
+   icon, that starts it with "piarcboot play <game>". Only an application that PiArcBoot made,
+   as its identifier says, is ever deleted. */
+static void mac_shortcut(const char *dir, const game_t *g, int wanted)
+{
+	char title[128], app[1100], path[1300], icon[1024];
+	char *plist;
+	size_t i;
+	FILE *f;
+
+	snprintf(title, sizeof title, "%s", g->title);
+	for (i = 0; title[i]; i++)
+		if (title[i] == '/' || title[i] == ':')
+			title[i] = ' ';
+	snprintf(app, sizeof app, "%s/%s.app", dir, title);
+	snprintf(path, sizeof path, "%s/Contents/Info.plist", app);
+	plist = (char *)file_read(path, NULL);
+	if (!wanted || plist)
+	{
+		if (plist && strstr(plist, BUNDLE_ID ".game."))
+			remove_tree(app);
+		free(plist);
+		if (!wanted || is_dir(app))     /* one of the user's own of that name is left alone */
+			return;
+	}
+	snprintf(path, sizeof path, "%s/Contents/MacOS", app);
+	make_dirs(path);
+	snprintf(path, sizeof path, "%s/Contents/Resources", app);
+	make_dirs(path);
+	snprintf(path, sizeof path, "%s/Contents/Info.plist", app);
+	if (!(f = fopen(path, "w")))
+		return;
+	fprintf(f, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
+		   "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n"
+		   "\t<key>CFBundleExecutable</key>\n\t<string>play</string>\n\t<key>CFBundleIconFile</key>\n\t<string>icon</string>\n"
+		   "\t<key>CFBundleIdentifier</key>\n\t<string>" BUNDLE_ID ".game.");
+	for (i = 0; g->id[i]; i++)
+		fputc(isalnum((unsigned char)g->id[i]) ? g->id[i] : '-', f);
+	fprintf(f, "</string>\n\t<key>CFBundleName</key>\n\t<string>");
+	xml_text(f, g->title);
+	fprintf(f, "</string>\n\t<key>CFBundlePackageType</key>\n\t<string>APPL</string>\n"
+		   "\t<key>LSApplicationCategoryType</key>\n\t<string>public.app-category.games</string>\n</dict>\n</plist>\n");
+	fclose(f);
+	snprintf(path, sizeof path, "%s/Contents/MacOS/play", app);
+	if (!(f = fopen(path, "w")))
+		return;
+	fprintf(f, "#!/bin/sh\nexec '");
+	sh_text(f, store_exe());
+	fprintf(f, "' play '");
+	sh_text(f, g->id);
+	fprintf(f, "'\n");
+	fclose(f);
+	chmod(path, 0755);
+	store_game_path(g->id, "icon.png", icon, sizeof icon);
+	snprintf(path, sizeof path, "%s/Contents/Resources/icon.icns", app);
+	write_icns(icon, path);
+}
+#endif
+
 #ifndef _WIN32
-/* The folders menu entries and desktop shortcuts go in. With PIARCBOOT_HOME set, which the tests
-   do, both are kept inside that folder and the real desktop and menu are left alone. */
+/* The folders menu entries and desktop shortcuts go in: on a Mac, a PiArcBoot Games folder in the
+   user's Applications folder, which Launchpad shows, and the desktop. With PIARCBOOT_HOME set,
+   which the tests do, both are kept inside that folder and the real desktop and menu are left
+   alone. */
 void store_shortcut_dirs(char *apps, size_t apps_size, char *desk, size_t desk_size)
 {
 	const char *test = getenv("PIARCBOOT_HOME"), *data = getenv("XDG_DATA_HOME");
@@ -405,6 +526,11 @@ void store_shortcut_dirs(char *apps, size_t apps_size, char *desk, size_t desk_s
 		make_dirs(desk);
 		return;
 	}
+#ifdef __APPLE__
+	(void)data;
+	dir = NULL;
+	snprintf(apps, apps_size, "%s/Applications/PiArcBoot Games", home);
+#else
 	if (data)
 		snprintf(apps, apps_size, "%s/applications", data);
 	else
@@ -412,6 +538,7 @@ void store_shortcut_dirs(char *apps, size_t apps_size, char *desk, size_t desk_s
 	dir = run_output("xdg-user-dir DESKTOP 2>/dev/null");
 	if (dir)
 		dir[strcspn(dir, "\r\n")] = 0;
+#endif
 	if (dir && dir[0] == '/')
 		snprintf(desk, desk_size, "%s", dir);
 	else
@@ -461,6 +588,13 @@ void store_shortcuts(const game_t *g)
 #ifdef _WIN32
 	shortcut("USERPROFILE", "\\Desktop", "desktop", g, g->desktop);
 	shortcut("APPDATA", "\\Microsoft\\Windows\\Start Menu\\Programs", "menu", g, g->menu);
+#elif defined(__APPLE__)
+	char apps[900], desk[900];
+
+	store_shortcut_dirs(apps, sizeof apps, desk, sizeof desk);
+	make_dirs(apps);
+	mac_shortcut(desk, g, g->desktop);
+	mac_shortcut(apps, g, g->menu);
 #else
 	char cls[160], apps[900], deskdir[900], menu[1100], desk[1100], icon[1024], exe[2800], id[400];
 	FILE *f;
@@ -506,7 +640,7 @@ void store_remove(const game_t *g)
 
 	none.desktop = none.menu = 0;
 	store_shortcuts(&none);
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__APPLE__)
 	{
 		char cls[160], apps[900], desk[900], entry[1100];
 
@@ -1899,6 +2033,9 @@ char **pick_files(int one_disc, int *n)
 			list[(*n)++] = strdup(path);
 		}
 	}
+#elif defined(__APPLE__)
+	list = one_disc ? mac_open_panel("Select Disk: choose a disc image to put in the drive", 0, n) :
+			  mac_open_panel("Add Game: choose its disc images, or an archive of its applications", 1, n);
 #else
 	{
 		char *out, *p;
@@ -1948,6 +2085,8 @@ void open_url(const char *url)
 {
 #ifdef _WIN32
 	ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWNORMAL);
+#elif defined(__APPLE__)
+	run_command("open \"%s\" >/dev/null 2>&1 &", url);
 #else
 	run_command("xdg-open \"%s\" >/dev/null 2>&1 &", url);
 #endif

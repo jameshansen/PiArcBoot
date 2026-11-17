@@ -32,6 +32,11 @@
 #define TAB_W 122
 #define TABS_Y 46               /* the top of the tab in front, under the search field */
 #define JASPP_URL "https://forums.jaspp.org.uk/"
+#ifdef __APPLE__
+#define MENU_SHORTCUT "Create Launchpad shortcut"     /* a game's application in Applications, which Launchpad shows */
+#else
+#define MENU_SHORTCUT "Create menu shortcut"
+#endif
 #define PIARCBOOT_URL "https://github.com/jameshansen/PiArcBoot"
 
 enum { DLG_NONE, DLG_INSTALL, DLG_PROGRESS, DLG_SETTINGS, DLG_MESSAGE, DLG_CONFIRM };
@@ -1213,7 +1218,7 @@ static void draw_dialog(int win_w, int win_h)
 	{
 		case DLG_INSTALL:
 		rg_option(cx, cy, 22, "Create desktop shortcut", &dlg_desktop, 1);
-		rg_option(cx, cy + 30, 22, "Create menu shortcut", &dlg_menu, 1);
+		rg_option(cx, cy + 30, 22, MENU_SHORTCUT, &dlg_menu, 1);
 		if (rg_button(ok_x - BTN_W - 20, by, BTN_W, BTN_H, "Cancel", 1) || rg_in.key == SDLK_ESCAPE || closed)
 			dlg = DLG_NONE;
 		else if (default_button(ok_x, by, BTN_W, BTN_H, "Install", 1) || rg_in.key == SDLK_RETURN)
@@ -1297,7 +1302,7 @@ static void draw_dialog(int win_w, int win_h)
 			rg_label(cx, cy, 72, 26, "Name", 1);
 			rg_field(cx + 80, cy, cw - 124, 26, dlg_name, sizeof dlg_name, 1);
 			rg_option(cx + 80, cy + 36, 22, "Create desktop shortcut", &dlg_desktop, 1);
-			rg_option(cx + 80 + (cw - 124) / 2, cy + 36, 22, "Create menu shortcut", &dlg_menu, 1);
+			rg_option(cx + 80 + (cw - 124) / 2, cy + 36, 22, MENU_SHORTCUT, &dlg_menu, 1);
 			rg_label(cx, cy + 68, 72, 26, "Starts by", 1);
 			snprintf(title, sizeof title, "%s%s", dlg_choices[dlg_choice][0] ? "running " : "booting the disc", dlg_choices[dlg_choice]);
 			rg_display(cx + 80, cy + 68, 230, 26, title);
@@ -1328,7 +1333,7 @@ static void draw_dialog(int win_w, int win_h)
 		else
 		{
 			rg_option(cx, cy, 22, "Create desktop shortcut", &dlg_desktop, 1);
-			rg_option(cx, cy + 30, 22, "Create menu shortcut", &dlg_menu, 1);
+			rg_option(cx, cy + 30, 22, MENU_SHORTCUT, &dlg_menu, 1);
 			rg_option(cx, cy + 60, 22, "Capture Mouse on Click", &dlg_capture, 1);
 			rg_option(cx, cy + 90, 22, "Slower Mode (A3000 Speed)", &dlg_a3000, 1);
 			rg_option(cx, cy + 120, 22, "Load floppies at a real drive's speed", &dlg_real_drive, 1);

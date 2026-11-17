@@ -246,20 +246,23 @@ int sprites_main(const sprite_t *list, int n)
 #define R_OUT 60.5
 #define R_IN 55.5
 
+static int icon_px = ICON;      /* the size it is drawn at, its shapes scaled from ICON's */
+
 static void circle(uint8_t *out, void (*inside)(double x, double y, double *rgb, void *p), void *p)
 {
+	double k = (double)ICON / icon_px;
 	int x, y, i, j;
 
-	for (y = 0; y < ICON; y++)
-		for (x = 0; x < ICON; x++)
+	for (y = 0; y < icon_px; y++)
+		for (x = 0; x < icon_px; x++)
 		{
 			double acc[3] = { 0, 0, 0 }, cover = 0, shadow = 0;
-			uint8_t *o = out + (y * ICON + x) * 4;
+			uint8_t *o = out + (y * icon_px + x) * 4;
 
 			for (j = 0; j < 4; j++)
 				for (i = 0; i < 4; i++)
 				{
-					double sx = x + (i + 0.5) / 4, sy = y + (j + 0.5) / 4;
+					double sx = (x + (i + 0.5) / 4) * k, sy = (y + (j + 0.5) / 4) * k;
 					double d = hypot(sx - CX, sy - CY), ds = hypot(sx - CX, sy - (CY + 2.5));
 					double rgb[3];
 
@@ -551,5 +554,13 @@ static void fill_badge(double x, double y, double *rgb, void *p)
 
 void icon_app(uint8_t *out)
 {
+	icon_app_at(out, ICON);
+}
+
+/* The same at px by px, for a Mac's icon sizes */
+void icon_app_at(uint8_t *out, int px)
+{
+	icon_px = px;
 	circle(out, fill_badge, NULL);
+	icon_px = ICON;
 }

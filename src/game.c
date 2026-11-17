@@ -1681,8 +1681,9 @@ int game_main(const char *id, const char *test_script)
 	if (settings.shader[0] && settings.scale < 2)
 		settings.scale = 2;
 	/* The renderer works in OpenGL, which the shaders run in: OpenGL ES on a Raspberry Pi, whose
-	   OpenGL is too old for them. SDL_RENDER_DRIVER still has the last word. */
-#if defined(__arm__) || defined(__aarch64__)
+	   OpenGL is too old for them, and OpenGL on a Mac of either kind. SDL_RENDER_DRIVER still has
+	   the last word. */
+#if (defined(__arm__) || defined(__aarch64__)) && !defined(__APPLE__)
 	SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengles2");
 #else
 	SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");

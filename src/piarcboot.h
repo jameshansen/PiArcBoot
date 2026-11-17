@@ -154,6 +154,7 @@ int sprites_main(const sprite_t *list, int n);
 void icon_render(uint8_t *out, const sprite_t *s);
 void icon_generic(uint8_t *out);
 void icon_app(uint8_t *out);
+void icon_app_at(uint8_t *out, int px);
 
 /* store.c: where games live and what is known about them */
 #define MAX_DISCS 9
@@ -286,6 +287,7 @@ void classics_remove_source(int i);
 int install_classic(const classic_t *c, int desktop, int menu, progress_t *p);
 int layout_files(game_t *g, const char *dir, adfs_file_t *files, int n, const char *boot, const char *support, progress_t *p);
 char **pick_files(int one_disc, int *n);
+char **mac_open_panel(const char *message, int several, int *n);       /* menubar.c, on a Mac */
 void open_url(const char *url);
 
 /* The windows are drawn with ROOGUI, which gives them the look of the RISC OS desktop */

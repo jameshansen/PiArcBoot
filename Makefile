@@ -9,10 +9,37 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v/
 CC ?= gcc
 OPT ?= -O2
 ARCEM_OPT ?= -O3
-SDL_CFLAGS := $(shell sdl2-config --cflags)
-SDL_LIBS := $(shell sdl2-config --libs)
+SDL_CFLAGS := $(shell sdl2-config --cflags 2>/dev/null)
+SDL_LIBS := $(shell sdl2-config --libs 2>/dev/null)
 
 ROOGUI ?= $(firstword $(wildcard roogui ../ROOGUI))
+
+# The program finds libroogui.so in the folder it is in itself
+LIBROOGUI := build/libroogui.so
+LINK := -Wl,-rpath,'$$ORIGIN'
+ROOGUI_MAKE :=
+
+# On a Mac: SDL2 is the framework from SDL's own release, in the folder SDL_FRAMEWORKS, and goes
+# in build/ beside the program. ARCHS="arm64 x86_64" makes one program for Apple silicon and Intel
+# Macs. ROOGUI is libroogui.dylib, found beside the program or in the application's Frameworks
+# folder, and the menu bar's file is Objective-C.
+ifeq ($(shell uname -s),Darwin)
+SDL_FRAMEWORKS ?= ../deps
+ARCHS ?=
+MACOS_MIN ?= 10.13
+override CC := $(CC) $(foreach a,$(ARCHS),-arch $(a)) -mmacosx-version-min=$(MACOS_MIN) -Wno-unknown-warning-option
+SDL_CFLAGS := -I$(abspath $(SDL_FRAMEWORKS))/SDL2.framework/Headers -F$(abspath $(SDL_FRAMEWORKS))
+SDL_LIBS := -F$(abspath $(SDL_FRAMEWORKS)) -framework SDL2
+LIBROOGUI := build/libroogui.dylib
+LINK := -Wl,-rpath,@executable_path -Wl,-rpath,@executable_path/../Frameworks -framework Cocoa
+ROOGUI_MAKE := CC="$(CC)" OPT="$(OPT)" SDL_CFLAGS="$(SDL_CFLAGS)" SDL_LIBS="$(SDL_LIBS)"
+build/src/menubar.o: OPT += -x objective-c -fobjc-arc
+build/piarcboot: build/SDL2.framework
+build/SDL2.framework: $(SDL_FRAMEWORKS)/SDL2.framework
+	@mkdir -p build
+	rm -rf $@
+	cp -R $< $@
+endif
 
 # The machine is ArcEm's, in arcem/ as ArcEm has its files. armemudec.c and armemuinstr.c are
 # part of armemu.c, arch/fastmap.c is part of the files that use arch/fastmap.h, and
@@ -26,15 +53,15 @@ ARCEM_H := $(wildcard arcem/*.h arcem/arch/*.h) arcem/armemudec.c arcem/armemuin
 SRC := $(wildcard src/*.c)
 OBJ := $(patsubst %.c,build/%.o,$(ARCEM) $(SRC))
 
-# The program finds libroogui.so in the folder it is in itself
-build/piarcboot: $(OBJ) build/libroogui.so
-	$(CC) -o $@ $(OBJ) -Lbuild -lroogui -Wl,-rpath,'$$ORIGIN' $(SDL_LIBS) -lz -lm -ldl
+build/piarcboot: $(OBJ) $(LIBROOGUI)
+	$(CC) -o $@ $(OBJ) -Lbuild -lroogui $(LINK) $(SDL_LIBS) -lz -lm -ldl
 
 # ROOGUI is a library of its own, built by its own Makefile, under its own licence
-build/libroogui.so: $(wildcard $(ROOGUI)/src/*.c $(ROOGUI)/src/*.h)
-	$(MAKE) -C $(ROOGUI) build/libroogui.so
+$(LIBROOGUI): $(wildcard $(ROOGUI)/src/*.c $(ROOGUI)/src/*.h)
+	$(MAKE) -C $(ROOGUI) build/libroogui.so $(ROOGUI_MAKE)
 	@mkdir -p build
-	cp $(ROOGUI)/build/libroogui.so build/libroogui.so
+	cp $(ROOGUI)/build/libroogui.so $@
+	$(if $(filter %.dylib,$@),install_name_tool -id @rpath/libroogui.dylib $@)
 	cp $(ROOGUI)/LICENSE build/LICENSE-ROOGUI
 
 build/arcem/%.o: arcem/%.c $(ARCEM_H)

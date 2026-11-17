@@ -30,6 +30,9 @@ precision highp int;
 //  beam_num_scanlines is 2.0, which a Raspberry Pi 400 draws in a third of the time. A third
 //  scanline is too far from any pixel to add to it at the beam's widest.
 //  bloom_approx_filter_static is 1.0, the 3x3 resize blur in place of the 4x4 Gaussian.
+//  Changed for PiArcBoot on 2026-11-17: the vertex shader writes texture_size_inv, which the
+//  fragment shader reads, where a constant of the same name hid it. A Mac's OpenGL won't link
+//  a fragment shader whose input the vertex shader doesn't write.
 
 // compatibility macros for transparently converting HLSLisms into GLSLisms
 #define mul(a,b) (b*a)
@@ -2807,7 +2810,7 @@ void main()
     //  resize is used instead of tex2Dblur3x3_resize (which samples between
     //  texels even for upsizing).
     const float2 dxdy_min_scale = ORIG_LINEARIZEDvideo_size/output_size;
-    const float2 texture_size_inv = float2(1.0, 1.0)/ORIG_LINEARIZEDtexture_size;
+    texture_size_inv = float2(1.0, 1.0)/ORIG_LINEARIZEDtexture_size;
     if(bloom_approx_filter > 1.5)   //  4x4 true Gaussian resize
     {
         //  For upsizing, we'll snap to texels and sample the nearest 4.
@@ -2822,7 +2825,6 @@ void main()
     //  tex2Dresize_gaussian4x4 needs to know a bit more than the other filters:
     tex_uv_to_pixel_scale = output_size *
         ORIG_LINEARIZEDtexture_size / ORIG_LINEARIZEDvideo_size;
-    //texture_size_inv = texture_size_inv;
 
     //  Detecting interlacing again here lets us apply convergence offsets in
     //  this pass.  il_step_multiple contains the (texel, scanline) step

@@ -130,7 +130,7 @@ static int get(const char *url, int seconds, grow_t *g)
 
 	if (!loaded)
 	{
-		static const char *const libs[] = { "libcurl.so.4", "libcurl-gnutls.so.4" };
+		static const char *const libs[] = { "libcurl.so.4", "libcurl-gnutls.so.4", "libcurl.4.dylib" };
 		static const char *const names[] = { "curl_global_init", "curl_easy_init", "curl_easy_setopt", "curl_easy_perform", "curl_easy_cleanup" };
 		void **slot = (void **)&curl, *lib = NULL;
 		size_t i;

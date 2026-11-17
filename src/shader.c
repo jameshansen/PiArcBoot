@@ -102,7 +102,7 @@ typedef struct
 } pass_t;
 
 static pass_t pass[MAX_PASSES];
-static int npasses, es, frame;
+static int npasses, es, glsl, frame;    /* es: OpenGL ES's version or 0; glsl: the shading language's, 120 for 1.20 */
 static GLuint luts[MAX_LUTS], fbo;
 static char lut_id[MAX_LUTS][64];       /* the names the passes know them by */
 static int nluts;
@@ -196,7 +196,7 @@ static void swizzle(GLint r, GLint b, GLint a)
 static GLuint compile(GLenum type, const char *text, const char *file)
 {
 	const char *body = text, *v = strstr(text, "#version"), *src[3];
-	char version[32], log[2048];
+	char version[512], log[2048];
 	GLuint s;
 	GLint ok;
 	int n = 110;
@@ -208,6 +208,13 @@ static GLuint compile(GLenum type, const char *text, const char *file)
 	}
 	if (es)
 		snprintf(version, sizeof version, n >= 130 ? "#version 300 es\n" : "#version 100\n");
+	else if (n > glsl && glsl >= 110)
+		/* A Mac's OpenGL 2.1, which goes to GLSL 1.20: the calls the shaders make from 1.30 are made
+		   from 1.20's own. textureLod reads at the level the hardware picks, which for these
+		   shaders' pictures, never shrunk, is the same one. */
+		snprintf(version, sizeof version, "#version %d\n#define round(x) floor((x) + 0.5)\n"
+			 "#define trunc(x) (sign(x) * floor(abs(x)))\n#define tanh(x) (1.0 - 2.0 / (exp(2.0 * clamp(x, -10.0, 10.0)) + 1.0))\n"
+			 "#define texture(s, c) texture2D(s, c)\n#define textureLod(s, c, l) texture2D(s, c)\n", glsl);
 	else
 		snprintf(version, sizeof version, "#version %d\n", n);
 	src[0] = version;
@@ -454,6 +461,8 @@ int shader_open(const char *preset)
 #undef F
 	ver = (const char *)gl.GetString(GL_VERSION);
 	es = ver && !strncmp(ver, "OpenGL ES", 9) ? atoi(ver + 10) > 2 ? atoi(ver + 10) : 2 : 0;        /* 0, or OpenGL ES's version */
+	ver = (const char *)gl.GetString(GL_SHADING_LANGUAGE_VERSION);
+	glsl = ver ? (int)(atof(ver) * 100 + 0.5) : 0;
 
 	if (!(text = (char *)file_read(preset, NULL)))
 		return -1;

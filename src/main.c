@@ -52,7 +52,7 @@ static const char usage[] =
 /* With no display to open a window on, SDL goes on to the console's own and waits there */
 static int no_display(void)
 {
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__APPLE__)
 	if (!getenv("DISPLAY") && !getenv("WAYLAND_DISPLAY") && !getenv("SDL_VIDEODRIVER"))
 	{
 		fprintf(stderr, "piarcboot: there's no display to open a window on, as DISPLAY and WAYLAND_DISPLAY aren't set. "
@@ -224,19 +224,20 @@ static int cmd_mkicons(int argc, char **argv)
 
 static int cmd_icon(int argc, char **argv)
 {
-	uint8_t *rgba = malloc(128 * 128 * 4), *d;
+	int px = argc > 2 && !strcmp(argv[0], "app") && atoi(argv[2]) > 0 ? atoi(argv[2]) : 128;
+	uint8_t *rgba = malloc((size_t)px * px * 4), *d;
 	sprite_t *sprites;
 	size_t len;
 	int n, i, pick;
 
 	if (argc < 2)
 	{
-		fprintf(stderr, "usage: piarcboot icon <file, or app or generic> <out.png> [sprite]\n");
+		fprintf(stderr, "usage: piarcboot icon <file, or app [size] or generic> <out.png> [sprite]\n");
 		free(rgba);
 		return 2;
 	}
 	if (!strcmp(argv[0], "app"))
-		icon_app(rgba);
+		icon_app_at(rgba, px);
 	else if (!strcmp(argv[0], "generic"))
 		icon_generic(rgba);
 	else if (strlen(argv[0]) > 4 && !strcmp(argv[0] + strlen(argv[0]) - 4, ".png"))
@@ -281,7 +282,7 @@ static int cmd_icon(int argc, char **argv)
 		sprites_free(sprites, n);
 		free(d);
 	}
-	i = png_write(argv[1], rgba, 128, 128);
+	i = png_write(argv[1], rgba, px, px);
 	if (i)
 		fprintf(stderr, "piarcboot icon: %s can't be written\n", argv[1]);
 	free(rgba);
@@ -381,7 +382,7 @@ static int cmd_check(void)
 
 int main(int argc, char **argv)
 {
-	const char *cmd = argc > 1 ? argv[1] : "";
+	const char *cmd = argc > 1 && strncmp(argv[1], "-psn_", 5) ? argv[1] : "";       /* an older Mac's Finder gives -psn_ */
 	const char *script = NULL;
 	int i;
 

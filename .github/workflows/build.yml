@@ -1,5 +1,6 @@
 # Builds PiArcBoot on every push: for 64-bit Raspberry Pi OS on an ARM runner, for x86-64 Linux, and
-# for 64-bit Windows with zig, each as an installer and a portable copy, both zips. A version tag
+# for 64-bit Windows with zig, each as an installer and a portable copy, both zips, and for macOS
+# as an application for Apple silicon and Intel Macs, zipped. A version tag
 # (v1.2.3) also publishes them as a release of that name, with install.sh and install.ps1, which
 # download and run the installer from a terminal. Its notes are a table of the downloads
 # (docs/releases/download.md, with the tag filled in) and then docs/releases/v1.2.3.md, and the
@@ -106,10 +107,42 @@ jobs:
           name: PiArcBoot-Windows
           path: PiArcBoot-*-Windows.zip
 
+  macos:
+    name: macOS
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: jameshansen/ROOGUI
+          ref: ${{ env.ROOGUI_REF }}
+          path: roogui
+      - name: Fetch SDL2
+        run: |
+          mkdir -p deps
+          curl -fsSL -o deps/SDL2.dmg "https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/SDL2-$SDL_VERSION.dmg"
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/sdl" deps/SDL2.dmg
+          cp -R "$RUNNER_TEMP/sdl/SDL2.framework" deps/
+          hdiutil detach "$RUNNER_TEMP/sdl"
+      - name: Build and run the self-tests
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then V=${GITHUB_REF_NAME#v}; else V=dev-${GITHUB_SHA::7}; fi
+          # one program for Apple silicon and Intel Macs, tested here on Apple silicon
+          make -j"$(sysctl -n hw.ncpu)" VERSION="$V" SDL_FRAMEWORKS=deps ARCHS="arm64 x86_64"
+          make check SDL_FRAMEWORKS=deps ARCHS="arm64 x86_64"
+          sh tools/mkmacapp.sh "$V"
+          PIARCBOOT_HOME=$PWD/build/app-home build/PiArcBoot.app/Contents/MacOS/piarcboot check
+      - name: Package
+        run: (cd build && ditto -c -k --keepParent PiArcBoot.app ../PiArcBoot-macOS.zip)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PiArcBoot-macOS
+          path: PiArcBoot-macOS.zip
+
   release:
     name: Publish the release
     if: github.ref_type == 'tag'
-    needs: [linux, windows]
+    needs: [linux, windows, macos]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -139,7 +172,7 @@ jobs:
           for kind in Installer Portable; do
             for os in RaspberryPi Windows Linux-x86-64; do files="$files out/PiArcBoot-$kind-$os.zip"; done
           done
-          files="$files out/install.sh out/install.ps1"
+          files="$files out/PiArcBoot-macOS.zip out/install.sh out/install.ps1"
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" $files --clobber
             gh release edit "$TAG" --notes-file notes.md

@@ -4,13 +4,13 @@
 
 <p align="center"><b>Acorn Archimedes games on the Raspberry Pi.</b><br>A free launcher that installs the games released by JASPP, the Archimedes Software Preservation Project, and boots each one straight into the game on an emulated Archimedes based on <a href="https://github.com/ArcEm-emu/ArcEm">ArcEm</a>, with its own icon and shortcuts. It needs no commercial ROM.</p>
 
-<p align="center"><a href="../../releases/latest"><b>Download for Raspberry Pi OS, Linux or Windows</b></a></p>
+<p align="center"><a href="../../releases/latest"><b>Download for Raspberry Pi OS, Linux, macOS or Windows</b></a></p>
 
 
 
 <p align="center"><img src="docs/launcher.png" alt="The launcher's JASPP tab, with four games installed"></p>
 
-Install from a terminal. On a Raspberry Pi or a Linux PC:
+Install from a terminal. On a Raspberry Pi, a Linux PC or a Mac:
 
 ```bash
 curl -fsSL https://github.com/jameshansen/PiArcBoot/releases/latest/download/install.sh | sh
@@ -88,7 +88,7 @@ Restoring a save puts back anything the game wrote to a floppy too, while files 
 
 ## What works
 
-Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 26.04), a Raspberry Pi 400 with 64-bit Raspberry Pi OS 13, and Windows 10.
+Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 26.04), a Raspberry Pi 400 with 64-bit Raspberry Pi OS 13, Windows 10 and macOS 13 on an Intel Mac.
 
 - The 117 games that take over the screen reach their own screens within 65 seconds, whether a title, a demo, a menu or a request for their next disc, Botkiller 2 and the Risc PC version of Speedball 2 from their 1.6MB discs
 - The games' disc checks pass, among them Hero Quest's, Fire and Ice's and Blaston's, and what Jet Fighter writes to its boot disc is kept
@@ -98,6 +98,7 @@ Tested by scripts that run the machine with no window, on x86-64 Linux (Ubuntu 2
 - Mah-Jong Patience, Premier Manager and SimCity, which play in the RISC OS desktop, start in their windows and are shown cropped to them, as Haunted House is
 - The 10 games with a hard disc installer install onto a folder the machine reads directly and start from there: Alone in the Dark, Black Angel, Break 147 & Superpool, Carnage Inc, Drop Ship, The Exotic Adventures of Sylvia Layne, Haunted House, Raw Power, Saloon Cars Deluxe and Stunt Racer 2000
 - On the Pi 400 the emulated machine can run about 2.5 times faster than a real one, and Lemmings holds full speed in a window and full screen
+- On a Mac, games install and play from the launcher, the game window's menus are in the menu bar, Select Disk and Add Game use the Mac's open dialog, a game's shortcut applications start it, sound plays and both shaders run
 
 ### Not yet
 
@@ -134,6 +135,16 @@ irm https://github.com/jameshansen/PiArcBoot/releases/latest/download/install.ps
 ```
 
 Or download `PiArcBoot-Installer-Windows.zip`, extract it and run `Install PiArcBoot.exe`. Games are kept in `%APPDATA%\PiArcBoot`.
+
+### Mac
+
+PiArcBoot is one application for Apple silicon and Intel Macs, built for macOS 10.13 or newer. In Terminal:
+
+```bash
+curl -fsSL https://github.com/jameshansen/PiArcBoot/releases/latest/download/install.sh | sh
+```
+
+That puts `PiArcBoot.app` in the Applications folder, where Launchpad shows it. Or download `PiArcBoot-macOS.zip`, open it and drag PiArcBoot to Applications. The first time an app downloaded in a browser is opened, macOS says it can't check it, as PiArcBoot isn't from a developer Apple has identified. Open System Settings, then Privacy & Security, and choose Open Anyway. Games are kept in `~/Library/Application Support/PiArcBoot`, and a game's shortcuts are applications of their own on the desktop and in `Applications/PiArcBoot Games`. The same command ending in `| sh -s -- --remove` removes PiArcBoot and keeps the games.
 
 ### Portable
 
@@ -235,12 +246,22 @@ The Windows build runs on Windows from Git Bash, or on Linux, with [zig](https:/
 sh tools/build-windows.sh <SDL2 folder> <zlib folder>
 ```
 
+On a Mac it builds with Xcode's command line tools and `SDL2.framework` from SDL's own release (`SDL2-2.32.10.dmg`), in the folder `SDL_FRAMEWORKS` names. `ARCHS` makes one program for Apple silicon and Intel Macs, and `tools/mkmacapp.sh` puts it together as `build/PiArcBoot.app`.
+
+```bash
+make SDL_FRAMEWORKS=deps ARCHS="arm64 x86_64"
+```
+
+```bash
+sh tools/mkmacapp.sh
+```
+
 | Path | What it is |
 | --- | --- |
 | `arcem/` | The machine, in ArcEm's own files |
 | `src/` | PiArcBoot's own code: the machine's layer over ArcEm, the floppy controllers and disc images, the launcher, the installer and the game window |
 | `tests/` | Scripts that boot every game in the table, compare pictures and test writing to discs |
-| `tools/` | The Windows build, the front of the installer and what packs it, and the script that makes the game table |
+| `tools/` | The Windows build, the Mac application, the front of the installer and what packs it, and the script that makes the game table |
 | `icons/` | The games' icons, made from their sprites |
 | `presets/` | Files Install adds to a game, such as a choices file that suits PiArcBoot's window, settings, and what games' hard disc installers copy |
 | `docs/` | Screenshots and release notes |
@@ -248,7 +269,7 @@ sh tools/build-windows.sh <SDL2 folder> <zlib folder>
 | `distributable-games/` | The Classics games' zips, kept for installing from and not part of a release |
 | `install.sh`, `install.ps1` | Download a release's installer and run it, from a terminal |
 
-GitHub Actions builds the Raspberry Pi, Linux PC and Windows downloads on every push, and a version tag such as `v1.0.0` publishes them as a release, with `docs/releases/v1.0.0.md` as its notes.
+GitHub Actions builds the Raspberry Pi, Linux PC, Mac and Windows downloads on every push, and a version tag such as `v1.0.0` publishes them as a release, with `docs/releases/v1.0.0.md` as its notes.
 
 ## Feedback
 
@@ -292,6 +313,6 @@ PiArcBoot's icon is the Archimedes badge, its triangular A in red and yellow on 
 
 PiArcBoot is free software under the GNU General Public License v3.0, in [LICENSE](LICENSE). The floppy disc controllers and the disc image code (`src/wd1772.c`, `src/82c711.c`, `src/disc.c` and `src/disc.h`) are under the GNU General Public License, version 2 or any later version, as each of those files says, with version 2's text in `arcem/COPYING`. ArcEm's files in `arcem/` keep their own notices: ArcEm is under the GNU General Public License, version 2 or any later version, and is used here under version 3. `arcem/COPYING` is the licence ArcEm ships. `src/hostfsmod.h` holds ArcEm's HostFS module, assembled from `arcem/support_modules/hostfs/hostfs.s`.
 
-`ROM311` is ROO311, under the Apache License, version 2.0. It is a separate work that the program loads, and its source is in the ROO311 repository, as is that of its support pack, which Install downloads for the games that need it. The icons in `icons/` are made from each game's own sprite and remain the copyright of the games' publishers. ROOGUI is a separate library under the Apache License, version 2.0, as are the RISC OS Open sprites and font outlines it carries. It ships beside the program as `libroogui.so`, or `roogui.dll` on Windows, with its licence in `LICENSE-ROOGUI`.
+`ROM311` is ROO311, under the Apache License, version 2.0. It is a separate work that the program loads, and its source is in the ROO311 repository, as is that of its support pack, which Install downloads for the games that need it. The icons in `icons/` are made from each game's own sprite and remain the copyright of the games' publishers. ROOGUI is a separate library under the Apache License, version 2.0, as are the RISC OS Open sprites and font outlines it carries. It ships beside the program as `libroogui.so`, `roogui.dll` on Windows, or `libroogui.dylib` in a Mac application's Frameworks, with its licence in `LICENSE-ROOGUI`.
 
 The shaders in `shaders/` are under the GNU General Public License, version 2 or any later version, with their own notices, and CRT-Royale's licence text is in `shaders/crt/shaders/crt-royale`. CRT-Royale-Pi is CRT-Royale's passes changed, as each changed file and its preset say.
