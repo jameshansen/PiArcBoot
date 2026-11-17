@@ -246,7 +246,7 @@ The Windows build runs on Windows from Git Bash, or on Linux, with [zig](https:/
 sh tools/build-windows.sh <SDL2 folder> <zlib folder>
 ```
 
-On a Mac it builds with Xcode's command line tools and `SDL2.framework` from SDL's own release (`SDL2-2.32.10.dmg`), in the folder `SDL_FRAMEWORKS` names. `ARCHS` makes one program for Apple silicon and Intel Macs, and `tools/mkmacapp.sh` puts it together as `build/PiArcBoot.app`.
+On a Mac it builds with Xcode's command line tools, up to Xcode 16 for the Intel half to run on macOS 10.13, and `SDL2.framework` from SDL's own release (`SDL2-2.32.10.dmg`), in the folder `SDL_FRAMEWORKS` names. `ARCHS` makes one program for Apple silicon and Intel Macs, and `tools/mkmacapp.sh` puts it together as `build/PiArcBoot.app`.
 
 ```bash
 make SDL_FRAMEWORKS=deps ARCHS="arm64 x86_64"
@@ -269,7 +269,7 @@ sh tools/mkmacapp.sh
 | `distributable-games/` | The Classics games' zips, kept for installing from and not part of a release |
 | `install.sh`, `install.ps1` | Download a release's installer and run it, from a terminal |
 
-GitHub Actions builds the Raspberry Pi, Linux PC, Mac and Windows downloads on every push, and a version tag such as `v1.0.0` publishes them as a release, with `docs/releases/v1.0.0.md` as its notes.
+GitHub Actions builds the Raspberry Pi, Linux PC, Mac and Windows downloads on every push, the Mac application with Xcode 16.4 on macOS 15 and tested on an Apple silicon Mac and an Intel one by `tests/macboot.sh`, and a version tag such as `v1.0.0` publishes them as a release, with `docs/releases/v1.0.0.md` as its notes.
 
 ## Feedback
 

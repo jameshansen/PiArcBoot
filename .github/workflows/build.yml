@@ -1,6 +1,6 @@
 # Builds PiArcBoot on every push: for 64-bit Raspberry Pi OS on an ARM runner, for x86-64 Linux, and
 # for 64-bit Windows with zig, each as an installer and a portable copy, both zips, and for macOS
-# as an application for Apple silicon and Intel Macs, zipped. A version tag
+# as an application for Apple silicon and Intel Macs, zipped and tested on both. A version tag
 # (v1.2.3) also publishes them as a release of that name, with install.sh and install.ps1, which
 # download and run the installer from a terminal. Its notes are a table of the downloads
 # (docs/releases/download.md, with the tag filled in) and then docs/releases/v1.2.3.md, and the
@@ -107,9 +107,14 @@ jobs:
           name: PiArcBoot-Windows
           path: PiArcBoot-*-Windows.zip
 
+  # One application for both kinds of Mac. Xcode 16.4 builds for macOS 10.13 as Apple supports it,
+  # which the Intel half runs on, and the Apple silicon half runs on macOS 11, as every Apple
+  # silicon Mac has. macOS 15 is the newest image with Xcode 16.
   macos:
     name: macOS
-    runs-on: macos-latest
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -124,14 +129,24 @@ jobs:
           hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/sdl" deps/SDL2.dmg
           cp -R "$RUNNER_TEMP/sdl/SDL2.framework" deps/
           hdiutil detach "$RUNNER_TEMP/sdl"
-      - name: Build and run the self-tests
+      - name: Build
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then V=${GITHUB_REF_NAME#v}; else V=dev-${GITHUB_SHA::7}; fi
-          # one program for Apple silicon and Intel Macs, tested here on Apple silicon
+          xcodebuild -version
           make -j"$(sysctl -n hw.ncpu)" VERSION="$V" SDL_FRAMEWORKS=deps ARCHS="arm64 x86_64"
-          make check SDL_FRAMEWORKS=deps ARCHS="arm64 x86_64"
           sh tools/mkmacapp.sh "$V"
-          PIARCBOOT_HOME=$PWD/build/app-home build/PiArcBoot.app/Contents/MacOS/piarcboot check
+      - name: Check the oldest macOS each half runs on
+        run: |
+          for f in build/PiArcBoot.app/Contents/MacOS/piarcboot build/PiArcBoot.app/Contents/Frameworks/libroogui.dylib; do
+            for a in x86_64:10.13 arm64:11.0; do
+              # minos in a build version record, version in the older kind a 10.13 target gets
+              got=$(vtool -arch "${a%%:*}" -show-build "$f" | awk '/minos|^ *version/ { print $2; exit }')
+              echo "$f ${a%%:*}: macOS $got"
+              [ "$got" = "${a#*:}" ] || { echo "::error::$f's ${a%%:*} half needs macOS $got, where ${a#*:} is promised"; exit 1; }
+            done
+          done
+      - name: Run the self-tests and boot a game on Apple silicon
+        run: sh tests/macboot.sh build/PiArcBoot.app
       - name: Package
         run: (cd build && ditto -c -k --keepParent PiArcBoot.app ../PiArcBoot-macOS.zip)
       - uses: actions/upload-artifact@v4
@@ -139,10 +154,26 @@ jobs:
           name: PiArcBoot-macOS
           path: PiArcBoot-macOS.zip
 
+  # The same zip on an Intel Mac, which GitHub has until the macOS 15 image retires
+  macos-intel:
+    name: macOS on Intel
+    needs: macos
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: PiArcBoot-macOS
+      - name: Run the self-tests and boot a game on Intel
+        run: |
+          ditto -x -k PiArcBoot-macOS.zip "$RUNNER_TEMP"
+          codesign --verify --deep --strict "$RUNNER_TEMP/PiArcBoot.app"
+          sh tests/macboot.sh "$RUNNER_TEMP/PiArcBoot.app"
+
   release:
     name: Publish the release
     if: github.ref_type == 'tag'
-    needs: [linux, windows, macos]
+    needs: [linux, windows, macos, macos-intel]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
